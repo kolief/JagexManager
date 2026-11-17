@@ -1,0 +1,15 @@
+<Application x:Class="JagexManager.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:JagexManager"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+             ThemeMode="System">
+    <Application.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible" />
+        <local:Collapsed x:Key="Collapsed" />
+
+        <FontWeight x:Key="Strong">Medium</FontWeight>
+        <FontFamily x:Key="HeadingFont">pack://application:,,,/Fonts/#Cinzel</FontFamily>
+        <sys:Double x:Key="TabSize">20</sys:Double>
+    </Application.Resources>
+</Application>
