@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/JagexManager.Core/JagexManager.Core.csproj" />
+    <Project Path="src/JagexManager/JagexManager.csproj" />
+  </Folder>
+</Solution>
