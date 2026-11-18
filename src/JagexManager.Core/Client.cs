@@ -11,6 +11,14 @@ public sealed class Client : IDisposable
 
     private Client(SafeFileHandle job) => this.job = job;
 
+    public static IReadOnlyDictionary<string, string> Variables(string sessionId, Character character) =>
+        new Dictionary<string, string>
+        {
+            ["JX_SESSION_ID"] = sessionId,
+            ["JX_CHARACTER_ID"] = character.Id,
+            ["JX_DISPLAY_NAME"] = character.Name,
+        };
+
     public static Client Start(string path, string arguments, string sessionId, Character character)
     {
         if (!File.Exists(path))
@@ -25,9 +33,8 @@ public sealed class Client : IDisposable
         foreach (var name in start.Environment.Keys.Where(k => k.StartsWith("JX_", StringComparison.OrdinalIgnoreCase)).ToList())
             start.Environment.Remove(name);
 
-        start.Environment["JX_SESSION_ID"] = sessionId;
-        start.Environment["JX_CHARACTER_ID"] = character.Id;
-        start.Environment["JX_DISPLAY_NAME"] = character.Name;
+        foreach (var (name, value) in Variables(sessionId, character))
+            start.Environment[name] = value;
 
         var job = CreateJobObject(0, null);
         if (job.IsInvalid)

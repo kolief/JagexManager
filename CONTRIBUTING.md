@@ -18,7 +18,8 @@ Run `dotnet format` to fix formatting.
 
 - **Keep secrets secret.** Session IDs and tokens must never reach a log, an
   exception message, the screen, or a file other than the vault and the Jagex
-  Launcher's own sign-in file.
+  Launcher's own sign-in file. The one exception is **Copy session details**,
+  which puts a session on the clipboard when the user asks for it.
 - **Core stays UI-free.** Logic that doesn't need a window belongs in
   `JagexManager.Core`. The WPF project should only show state and forward
   clicks.

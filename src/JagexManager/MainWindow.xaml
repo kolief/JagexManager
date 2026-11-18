@@ -197,7 +197,8 @@
                                         <ItemsControl ItemsSource="{Binding Characters}" IsTabStop="False">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate DataType="{x:Type core:CharacterView}">
-                                                    <Border BorderThickness="0,1,0,0" Padding="16,8,12,8"
+                                                    <Border BorderThickness="0,1,0,0" Padding="16,8,12,8" Background="Transparent"
+                                                            MouseRightButtonUp="OfferSession"
                                                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
                                                         <DockPanel>
                                                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">

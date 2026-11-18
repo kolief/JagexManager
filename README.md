@@ -32,6 +32,10 @@ Windows 10 or 11 with RuneLite or the Jagex Launcher installed.
 4. To open the Jagex Launcher signed in to an account, click the
    **Open in the Jagex Launcher** icon on that account. If the launcher is
    already open, it is closed and reopened.
+5. To use a character in another program, right-click it and choose
+   **Copy session details**. This copies its `JX_SESSION_ID`, `JX_CHARACTER_ID`
+   and `JX_DISPLAY_NAME`. Anyone with these can play as that character until the
+   session ends, so only paste them into programs you trust.
 
 The **Settings** tab has the default client and its launch options (such as
 RuneLite's `--profile=Main`), the theme, the font, and a button to sign the

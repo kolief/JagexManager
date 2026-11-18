@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Controls;
@@ -325,8 +326,47 @@ public partial class MainWindow : Window
         menu.Items.Add(new Separator());
         foreach (var program in installed)
             menu.Items.Add(ClientItem(character, program.Name, program.Name));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(SessionItem(character));
 
         menu.IsOpen = true;
+    }
+
+    private void OfferSession(object sender, MouseButtonEventArgs e)
+    {
+        var row = (FrameworkElement)sender;
+        var menu = MenuBelow(row);
+        menu.Placement = PlacementMode.MousePoint;
+        menu.Items.Add(SessionItem((CharacterView)row.DataContext));
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private MenuItem SessionItem(CharacterView character)
+    {
+        var item = new MenuItem { Header = "_Copy session details", IsEnabled = !character.Owner.Expired };
+        item.Click += (_, _) => CopySession(character);
+        return item;
+    }
+
+    private void CopySession(CharacterView character)
+    {
+        var lines = Client.Variables(character.Owner.Account.SessionId, character.Character).Select(v => $"{v.Key}={v.Value}");
+        var data = new DataObject(DataFormats.UnicodeText, string.Join(Environment.NewLine, lines));
+        foreach (var format in new[] { "ExcludeClipboardContentFromMonitorProcessing", "CanIncludeInClipboardHistory", "CanUploadToCloudClipboard" })
+            data.SetData(format, new MemoryStream(BitConverter.GetBytes(0)));
+
+        try
+        {
+            Clipboard.SetDataObject(data, copy: true);
+        }
+        catch (ExternalException)
+        {
+            Say("The clipboard is in use by another program. Try again.");
+            return;
+        }
+
+        Say($"Copied the session details for {character.Name}. Anyone with them can play as this character, so only paste them into programs you trust.");
     }
 
     private ContextMenu MenuBelow(UIElement target)
