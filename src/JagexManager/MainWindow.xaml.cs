@@ -118,6 +118,22 @@ public partial class MainWindow : Window
         });
     }
 
+    private async void Refresh(object sender, RoutedEventArgs e)
+    {
+        var account = (AccountView)((FrameworkElement)sender).DataContext;
+
+        bool? reached = null;
+        await TryAsync(async () => reached = await roster.RefreshAsync(account));
+
+        if (!roster.Accounts.Contains(account))
+            return;
+
+        if (reached == false)
+            Say("Jagex could not be reached. Try again in a moment.");
+        else if (reached == true && !account.Expired)
+            Say($"{account.Name}: {account.Summary.ToLowerInvariant()}.");
+    }
+
     private async void OpenLauncher(object sender, RoutedEventArgs e) =>
         await UseLauncherAsync(() => HandOverAsync((AccountView)((FrameworkElement)sender).DataContext));
 

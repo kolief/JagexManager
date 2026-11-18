@@ -61,7 +61,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
         return true;
     }
 
-    public async Task RefreshAsync(AccountView account)
+    public async Task<bool> RefreshAsync(AccountView account)
     {
         var session = account.Account.SessionId;
 
@@ -71,7 +71,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
         {
             var characters = await jagex.ListCharactersAsync(session);
             if (!Current())
-                return;
+                return true;
 
             account.Expired = false;
             if (!characters.SequenceEqual(account.Account.Characters))
@@ -80,14 +80,20 @@ public sealed class Roster(Vault vault, Jagex jagex)
                 account.Update(account.Account with { Characters = characters, Choices = choices });
                 Save();
             }
+
+            return true;
         }
         catch (JagexException e) when (e.Rejected)
         {
-            if (Current())
-                account.Expired = true;
+            if (!Current())
+                return true;
+
+            account.Expired = true;
+            return true;
         }
         catch (Exception e) when (Unreachable(e))
         {
+            return false;
         }
     }
 

@@ -173,6 +173,12 @@
                                                     <TextBlock Text="&#xE8A7;" Style="{StaticResource Icon}" FontSize="14" />
                                                 </Button>
                                             </ContentControl>
+                                            <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Click="Refresh" Margin="8,0,0,0"
+                                                    VerticalAlignment="Center" ToolTip="Check for new characters"
+                                                    AutomationProperties.Name="{Binding Name, StringFormat=Check {0} for new characters}"
+                                                    Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
+                                                <TextBlock Text="&#xE72C;" Style="{StaticResource Icon}" FontSize="14" />
+                                            </Button>
                                             <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Content="Sign in again" Click="SignIn" Margin="8,0,0,0"
                                                     VerticalAlignment="Center" Style="{DynamicResource AccentButtonStyle}"
                                                     AutomationProperties.Name="{Binding Name, StringFormat=Sign in again for {0}}"
