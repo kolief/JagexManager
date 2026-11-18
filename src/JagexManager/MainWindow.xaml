@@ -43,6 +43,22 @@
             <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
         </Style>
 
+        <Style x:Key="Badge" TargetType="Grid">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextElement.FontSize" Value="10" />
+            <Setter Property="TextElement.FontWeight" Value="SemiBold" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Member}" Value="True">
+                    <Setter Property="TextElement.Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Membership}" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="Section" TargetType="Border" BasedOn="{StaticResource Card}">
             <Setter Property="Padding" Value="16,12" />
         </Style>
@@ -234,7 +250,16 @@
                                                             </Ellipse>
 
                                                             <StackPanel VerticalAlignment="Center">
-                                                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                                    <Grid Style="{StaticResource Badge}" ToolTip="{Binding MembershipNote}">
+                                                                        <Border CornerRadius="3" Opacity="0.16"
+                                                                                Background="{Binding (TextElement.Foreground), RelativeSource={RelativeSource Self}}" />
+                                                                        <TextBlock Text="{Binding Membership}" Margin="5,1" />
+                                                                    </Grid>
+                                                                    <TextBlock Text="{Binding MembershipLeft}" Margin="6,0,0,0" FontSize="12"
+                                                                               VerticalAlignment="Center" Style="{StaticResource Secondary}" />
+                                                                </StackPanel>
                                                                 <TextBlock Text="{Binding Choice}" TextTrimming="CharacterEllipsis">
                                                                     <TextBlock.Style>
                                                                         <Style TargetType="TextBlock" BasedOn="{StaticResource Secondary}">

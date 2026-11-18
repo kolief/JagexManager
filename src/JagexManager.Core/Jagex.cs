@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -62,16 +63,54 @@ public sealed class Jagex(HttpClient http)
 
     public async Task<IReadOnlyList<Character>> ListCharactersAsync(string sessionId, CancellationToken cancel = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{SessionUrl}/accounts");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{SessionUrl}/accounts?fetchMembership=true");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sessionId);
 
-        var characters = await SendAsync<List<Character?>>(request, cancel);
-        return characters
-            .Where(c => c is { Id.Length: > 0 })
-            .Select(c => c! with { Name = c.Name ?? "" })
+        var entries = await SendAsync<List<Entry?>>(request, cancel);
+        return entries
+            .Where(e => e is { Id.Length: > 0 })
+            .Select(e => new Character(e!.Id!, e.Name ?? "") { Membership = Membership(e.Membership) })
             .DistinctBy(c => c.Id)
             .ToList();
     }
+
+    private static Membership? Membership(JsonElement list)
+    {
+        if (list.ValueKind != JsonValueKind.Array)
+            return null;
+
+        Membership latest = new(null, false);
+        foreach (var entry in list.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object || Text(entry, "gameGroup") != "RUNESCAPE")
+                continue;
+
+            if (Ends(entry) is not { } ends)
+                return null;
+
+            if (latest.Ends is null || ends > latest.Ends)
+                latest = new Membership(ends, entry.TryGetProperty("activeSubscription", out var renews) && renews.ValueKind == JsonValueKind.True);
+        }
+
+        return latest;
+    }
+
+    private static DateTimeOffset? Ends(JsonElement entry)
+    {
+        if (!entry.TryGetProperty("expirationDate", out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var seconds) && double.IsFinite(seconds))
+            return DateTimeOffset.UnixEpoch.AddSeconds(Math.Clamp(seconds, 0, 253402300799));
+
+        return Text(entry, "expirationDate") is { } text
+            && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
+            ? date
+            : null;
+    }
+
+    private static string? Text(JsonElement entry, string name) =>
+        entry.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     public async Task<string?> FindNameAsync(string subject, string accessToken, CancellationToken cancel = default)
     {
@@ -113,6 +152,11 @@ public sealed class Jagex(HttpClient http)
     }
 
     private sealed record Session(string? SessionId);
+
+    private sealed record Entry(
+        [property: JsonPropertyName("accountId")] string? Id,
+        [property: JsonPropertyName("displayName")] string? Name,
+        [property: JsonPropertyName("membership")] JsonElement Membership);
 
     private sealed record User(string? DisplayName, string? Suffix);
 }

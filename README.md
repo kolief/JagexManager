@@ -15,6 +15,7 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
   or any other client you add.
 - Run several characters at once, from one account or many.
 - Choose a different client for each character.
+- See whether each character is P2P, with the days of membership left, or F2P.
 - Open the Jagex Launcher signed in to any of your accounts, or sign it out.
 - Use RuneLite's colours and the RuneScape font.
 

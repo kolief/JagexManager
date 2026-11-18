@@ -5,7 +5,15 @@ namespace JagexManager;
 
 public sealed record Character(
     [property: JsonPropertyName("accountId")] string Id,
-    [property: JsonPropertyName("displayName")] string Name);
+    [property: JsonPropertyName("displayName")] string Name)
+{
+    public Membership? Membership { get; init; }
+}
+
+public sealed record Membership(DateTimeOffset? Ends, bool Renews)
+{
+    public bool Active => Ends > DateTimeOffset.UtcNow;
+}
 
 public sealed record Account(string Id, string Name, string SessionId, IReadOnlyList<Character> Characters)
 {
