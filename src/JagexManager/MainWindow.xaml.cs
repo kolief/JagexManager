@@ -161,6 +161,9 @@ public partial class MainWindow : Window
     {
         refreshed = DateTimeOffset.UtcNow;
         await TryAsync(roster.RefreshAllAsync);
+
+        if (WindowState == WindowState.Minimized)
+            WorkingSet.Trim();
     }
 
     private void Open()

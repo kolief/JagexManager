@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace JagexManager;
@@ -9,10 +8,13 @@ public static class WorkingSet
     {
         GC.Collect();
         GC.WaitForPendingFinalizers();
+        GC.Collect();
 
-        using var self = Process.GetCurrentProcess();
-        _ = SetProcessWorkingSetSize(self.Handle, -1, -1);
+        _ = SetProcessWorkingSetSize(GetCurrentProcess(), -1, -1);
     }
+
+    [DllImport("kernel32.dll")]
+    private static extern nint GetCurrentProcess();
 
     [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -26,6 +26,10 @@ Run `dotnet format` to fix formatting.
 - **No comments in the code.** Say it with names and small functions.
 - **No new dependencies without a reason.** The app ships as one file and
   handles credentials; every dependency is something users must trust.
+- **Keep memory low.** Releases are published uncompressed, because a
+  compressed single-file exe unpacks every library into memory at start-up, and
+  the window renders in software. Both keep the app near 40 MB. Measure memory
+  before changing either.
 - **Nothing that helps break Jagex's rules.** Automation of gameplay, ban
   evasion and credential sharing are out of scope.
 
