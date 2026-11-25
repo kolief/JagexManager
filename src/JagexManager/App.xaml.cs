@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace JagexManager;
@@ -57,6 +59,7 @@ public partial class App : Application
         }
 
         DispatcherUnhandledException += Report;
+        RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
         SystemParameters.StaticPropertyChanged += FollowContrast;
 
         var window = new MainWindow();

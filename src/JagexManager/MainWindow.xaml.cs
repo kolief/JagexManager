@@ -66,8 +66,11 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await LoadAsync();
         StateChanged += (_, _) =>
         {
-            if (WindowState == WindowState.Minimized)
-                HideToTray();
+            if (WindowState != WindowState.Minimized)
+                return;
+
+            HideToTray();
+            WorkingSet.Trim();
         };
     }
 
@@ -130,6 +133,9 @@ public partial class MainWindow : Window
 
         if (settings.CheckUpdates)
             await CheckUpdateAsync();
+
+        if (WindowState == WindowState.Minimized)
+            WorkingSet.Trim();
     }
 
     private async Task CheckUpdateAsync()
