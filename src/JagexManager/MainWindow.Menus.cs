@@ -73,9 +73,8 @@ public partial class MainWindow
         var menu = new MenuItem { Header = "RuneLite _profile" };
         foreach (var profile in profiles)
         {
-            var item = Display.Item(Literal(profile), () => UseProfile(character, profile));
-            item.IsChecked = string.Equals(profile, current, StringComparison.OrdinalIgnoreCase);
-            menu.Items.Add(item);
+            var ticked = string.Equals(profile, current, StringComparison.OrdinalIgnoreCase);
+            menu.Items.Add(Display.Check(Literal(profile), ticked, () => UseProfile(character, profile)));
         }
 
         if (character.Options is not null)
@@ -106,9 +105,7 @@ public partial class MainWindow
         foreach (var group in roster.Groups)
         {
             var member = character.InGroup(group.Name);
-            var item = Display.Item(Literal(group.Name), () => ToggleGroup(character, group.Name, !member));
-            item.IsChecked = member;
-            menu.Items.Add(item);
+            menu.Items.Add(Display.Check(Literal(group.Name), member, () => ToggleGroup(character, group.Name, !member)));
         }
 
         if (menu.Items.Count > 0)
@@ -244,10 +241,12 @@ public partial class MainWindow
         if (items.Count > 0)
             items.Add(new Separator());
 
-        var accounts = roster.Accounts.Where(a => !a.Expired && a.Characters.Any(c => c.Listed)).ToList();
+        static bool Offered(CharacterView character) => !character.Hidden || character.Running;
+
+        var accounts = roster.Accounts.Where(a => !a.Expired && a.Characters.Any(Offered)).ToList();
         foreach (var account in accounts)
         {
-            var characters = account.Characters.Where(c => c.Listed).Select(TrayItem).ToList();
+            var characters = account.Characters.Where(Offered).Select(TrayItem).ToList();
             if (accounts.Count == 1)
             {
                 items.AddRange(characters);
@@ -268,14 +267,13 @@ public partial class MainWindow
 
     private MenuItem TrayItem(CharacterView character)
     {
-        var item = Display.Item(Literal(character.Name), async () =>
+        var item = Display.Check(Literal(character.Name), character.Running, async () =>
         {
             if (!character.Running)
                 await FromTrayAsync(PlayAsync(character));
             else if (!FocusClient(character))
                 Restore();
         });
-        item.IsChecked = character.Running;
         item.IsEnabled = character.Ready;
         return item;
     }

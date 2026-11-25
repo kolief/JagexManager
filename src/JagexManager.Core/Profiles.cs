@@ -54,7 +54,7 @@ public static partial class Profiles
     private static string With(string? options, string profile)
     {
         var rest = Flag().Replace(options ?? "", "").Trim();
-        var flag = profile.Contains(' ', StringComparison.Ordinal) ? $"--profile=\"{profile}\"" : $"--profile={profile}";
+        var flag = profile.Any(char.IsWhiteSpace) ? $"--profile=\"{profile}\"" : $"--profile={profile}";
         return $"{flag} {rest}".Trim();
     }
 

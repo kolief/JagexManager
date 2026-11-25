@@ -23,7 +23,9 @@ public sealed record Outcome(CharacterView Character, Program Program, string? E
         if (started == 0 && failed.All(f => f.Error == first.Error) && first.Error is { } shared)
             return shared;
 
-        return $"Started {started} of {outcomes.Count} characters {place}. {first.Character.Name}: {first.Error}";
+        return started == 0
+            ? $"No characters {place} started. {first.Character.Name}: {first.Error}"
+            : $"Started {started} of {outcomes.Count} characters {place}. {first.Character.Name}: {first.Error}";
     }
 }
 
@@ -87,7 +89,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     public void Load()
     {
         foreach (var account in vault.Load())
-            Accounts.Add(View(account));
+            Accounts.Add(Track(account));
 
         Regroup();
         Changed();
@@ -102,7 +104,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         }
         else
         {
-            Accounts.Add(View(account));
+            Accounts.Add(Track(account));
         }
 
         Commit();
@@ -280,7 +282,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
             Adopt(owner!, adopted);
     }
 
-    public async Task PlayAsync(CharacterView character, Program program)
+    public async Task<bool> PlayAsync(CharacterView character, Program program)
     {
         if (!character.Running && !program.Installed)
             throw new PlayException($"{program.Name} was not found. Choose another client.");
@@ -288,8 +290,11 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         await RefreshAsync(character.Owner);
 
         Confirm(character);
-        if (Start(character, program))
-            Started(character);
+        if (!Start(character, program))
+            return false;
+
+        Stamp(character);
+        return true;
     }
 
     public async Task<IReadOnlyList<Outcome>> PlayAllAsync(IReadOnlyList<CharacterView> waiting, Func<CharacterView, Program> pick, TimeSpan gap)
@@ -320,7 +325,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
                         continue;
 
                     launched = true;
-                    Started(character);
+                    Stamp(character);
                     outcomes.Add(new Outcome(character, program, null));
                 }
                 catch (Exception e) when (Failed(e))
@@ -411,14 +416,13 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
     private static bool Start(CharacterView character, Program program)
     {
-        var account = character.Owner;
         if (character.Running)
             return false;
 
         if (!program.Installed)
             throw new PlayException($"{program.Name} was not found. Choose another client.");
 
-        character.Attach(Client.Start(program.Path, program.Arguments, account.Account.SessionId, character.Character));
+        character.Attach(Client.Start(program.Path, program.Arguments, character.Owner.Account.SessionId, character.Character));
         return true;
     }
 
@@ -434,13 +438,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         Usable(account);
     }
 
-    private void Started(CharacterView character)
-    {
-        Changed();
-        TryStamp(character);
-    }
-
-    private void TryStamp(CharacterView character)
+    private void Stamp(CharacterView character)
     {
         var now = DateTimeOffset.UtcNow;
         try
@@ -466,7 +464,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
     private static string Names(List<CharacterView> characters)
     {
-        if (characters.Count > NamesShown)
+        if (characters.Count > NamesShown + 1)
             return $"{string.Join(", ", characters.Take(NamesShown).Select(c => c.Name))} and {characters.Count - NamesShown} others";
 
         return $"{string.Join(", ", characters.SkipLast(1).Select(c => c.Name))} and {characters[^1].Name}";
@@ -536,7 +534,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
             Groups.RemoveAt(Groups.Count - 1);
     }
 
-    private AccountView View(Account account) => new(account) { Sort = sort, Search = search };
+    private AccountView Track(Account account) => new(account) { Sort = sort, Search = search };
 
     private static bool Unreachable(Exception e) =>
         e is JagexException or HttpRequestException or TaskCanceledException;

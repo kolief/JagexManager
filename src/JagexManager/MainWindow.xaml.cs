@@ -490,12 +490,13 @@ public partial class MainWindow : Window
 
     private async Task<bool> PlayManyAsync(IReadOnlyList<CharacterView> waiting, string place)
     {
-        IReadOnlyList<Outcome> outcomes = [];
+        IReadOnlyList<Outcome>? outcomes = null;
         await TryAsync(async () => outcomes = await roster.PlayAllAsync(waiting, c => settings.Find(c.Choice, c.Options), TimeSpan.FromSeconds(settings.Gap)));
-        if (outcomes.Count > 0)
-            Say(Outcome.Summary(outcomes, place));
+        if (outcomes is null)
+            return false;
 
-        return outcomes.Count > 0 && outcomes.All(o => o.Error is null);
+        Say(outcomes.Count > 0 ? Outcome.Summary(outcomes, place) : $"Every character {place} is already running.");
+        return outcomes.All(o => o.Error is null);
     }
 
     private void Search(object sender, TextChangedEventArgs e) => roster.Search = SearchBox.Text;
@@ -535,9 +536,9 @@ public partial class MainWindow : Window
         {
             await TryAsync(async () =>
             {
-                await roster.PlayAsync(character, program);
+                var launched = await roster.PlayAsync(character, program);
                 started = true;
-                Say($"Started {character.Name} in {program.Name}.");
+                Say(launched ? $"Started {character.Name} in {program.Name}." : $"{character.Name} is already running.");
             });
         }
         finally

@@ -21,4 +21,12 @@ public static class Display
         item.Click += (_, _) => click();
         return item;
     }
+
+    public static MenuItem Check(string header, bool ticked, Action click)
+    {
+        var item = Item(header, click);
+        item.IsCheckable = true;
+        item.IsChecked = ticked;
+        return item;
+    }
 }
