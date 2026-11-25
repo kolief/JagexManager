@@ -16,13 +16,34 @@ public sealed class CharacterView(AccountView owner, Character character) : View
         set
         {
             character = value;
-            Raise(nameof(Character), nameof(Name), nameof(Choice), nameof(Member), nameof(Membership), nameof(MembershipLeft), nameof(MembershipNote));
+            Raise(nameof(Character), nameof(Name), nameof(Choice), nameof(Options), nameof(Detail), nameof(Hidden), nameof(Visible));
+            Recount();
         }
     }
 
-    public string Name => character.Name.Length > 0 ? character.Name : "Unnamed character";
+    public string Name => Preference.Nickname ?? RealName;
 
     public string? Choice => Owner.Account.Choices.GetValueOrDefault(character.Id);
+
+    public string? Options => Preference.Options;
+
+    public bool Hidden => Preference.Hidden;
+
+    public bool Visible => !Hidden || Owner.ShowHidden || Running;
+
+    public string? Detail
+    {
+        get
+        {
+            string?[] parts = [Preference.Nickname is null ? null : RealName, Choice, Options];
+            var shown = parts.OfType<string>().ToList();
+            return shown.Count > 0 ? string.Join(" · ", shown) : null;
+        }
+    }
+
+    private string RealName => character.Name.Length > 0 ? character.Name : "Unnamed character";
+
+    private Preference Preference => Owner.Account.Preferences.GetValueOrDefault(character.Id) ?? Preference.None;
 
     public bool Member => character.Membership is { Active: true };
 
@@ -34,6 +55,8 @@ public sealed class CharacterView(AccountView owner, Character character) : View
     };
 
     public string? MembershipLeft => character.Membership is { Active: true, Ends: { } ends } ? Left(ends) : null;
+
+    public bool Lapsing => character.Membership is { Active: true, Renews: false, Ends: { } ends } && ends - DateTimeOffset.UtcNow <= TimeSpan.FromDays(3);
 
     public string? MembershipNote => character.Membership switch
     {
@@ -51,7 +74,12 @@ public sealed class CharacterView(AccountView owner, Character character) : View
         set => Set(ref ready, value, nameof(Ready));
     }
 
-    public void Attach(Client started) => Set(ref client, started, nameof(Running));
+    public void Reveal() => Raise(nameof(Visible));
+
+    public void Recount() =>
+        Raise(nameof(Member), nameof(Membership), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing));
+
+    public void Attach(Client started) => Set(ref client, started, nameof(Running), nameof(Visible));
 
     public void Stop() => client?.Stop();
 
@@ -64,7 +92,7 @@ public sealed class CharacterView(AccountView owner, Character character) : View
     public void Forget()
     {
         client?.Dispose();
-        Set(ref client, null, nameof(Running));
+        Set(ref client, null, nameof(Running), nameof(Visible));
     }
 
     private static string Left(DateTimeOffset ends) =>

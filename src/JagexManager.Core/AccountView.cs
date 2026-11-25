@@ -6,6 +6,7 @@ public sealed class AccountView : View
 {
     private Account account;
     private bool expired;
+    private bool showHidden;
 
     public AccountView(Account account)
     {
@@ -26,10 +27,40 @@ public sealed class AccountView : View
         var count => $"{count} characters",
     };
 
+    public int HiddenCount => Characters.Count(c => c.Hidden);
+
+    public string HiddenNote => (ShowHidden, HiddenCount) switch
+    {
+        (true, _) => "Hide them again",
+        (false, 1) => "Show 1 hidden character",
+        (false, var count) => $"Show {count} hidden characters",
+    };
+
+    public bool ShowHidden
+    {
+        get => showHidden;
+        set
+        {
+            if (showHidden == value)
+                return;
+
+            showHidden = value;
+            Raise(nameof(ShowHidden), nameof(HiddenNote));
+            foreach (var character in Characters)
+                character.Reveal();
+        }
+    }
+
     public bool Expired
     {
         get => expired;
         set => Set(ref expired, value, nameof(Expired));
+    }
+
+    public void Recount()
+    {
+        foreach (var character in Characters)
+            character.Recount();
     }
 
     public void Update(Account latest)
@@ -58,6 +89,9 @@ public sealed class AccountView : View
                 Characters.Move(current, position);
         }
 
-        Raise(nameof(Account), nameof(Name), nameof(Summary));
+        if (HiddenCount == 0)
+            showHidden = false;
+
+        Raise(nameof(Account), nameof(Name), nameof(Summary), nameof(HiddenCount), nameof(ShowHidden), nameof(HiddenNote));
     }
 }

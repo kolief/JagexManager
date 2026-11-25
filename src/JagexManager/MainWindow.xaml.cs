@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation.Peers;
@@ -13,6 +15,7 @@ using Microsoft.Win32;
 
 namespace JagexManager;
 
+[SuppressMessage("Reliability", "CA1001", Justification = "The tray icon is disposed when the window closes.")]
 public partial class MainWindow : Window
 {
     private static readonly string SettingsPath = Path.Combine(App.DataFolder, "settings.json");
@@ -23,11 +26,19 @@ public partial class MainWindow : Window
     private readonly Vault vault = new(Path.Combine(App.DataFolder, "vault.bin"));
     private readonly Jagex jagex = Jagex.Connect();
     private readonly Roster roster;
+    private static readonly TimeSpan Fresh = TimeSpan.FromMinutes(5);
+    private static readonly HttpClient Updates = new() { Timeout = TimeSpan.FromSeconds(10) };
+
     private readonly DispatcherTimer watch = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherTimer freshen = new() { Interval = TimeSpan.FromHours(1) };
     private readonly bool fontOffered = GameFont.Available(GameFont.Repository);
+    private readonly Tray tray;
     private Settings settings;
     private bool gameFont;
     private bool launcherBusy;
+    private bool refreshing;
+    private DateTime refreshed = DateTime.MinValue;
+    private Release? update;
 
     private AccountView? dragged;
     private bool moved;
@@ -35,6 +46,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         roster = new Roster(vault, jagex);
+        tray = new Tray(Bring, Close);
         InitializeComponent();
 
         Title = $"JagexManager {typeof(App).Assembly.GetName().Version?.ToString(3)}";
@@ -47,8 +59,52 @@ public partial class MainWindow : Window
 
         watch.Tick += (_, _) => roster.DropClosed();
         watch.Start();
+        freshen.Tick += async (_, _) => await RefreshAllAsync();
 
         Loaded += async (_, _) => await LoadAsync();
+        Activated += async (_, _) =>
+        {
+            if (DateTime.UtcNow - refreshed >= Fresh)
+                await RefreshAllAsync();
+        };
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized)
+                Tuck();
+        };
+    }
+
+    public void Start(bool hidden)
+    {
+        if (hidden)
+        {
+            WindowState = WindowState.Minimized;
+            ShowActivated = false;
+        }
+
+        Show();
+        if (hidden)
+            Tuck();
+    }
+
+    public void Bring()
+    {
+        tray.Visible = false;
+        Show();
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+
+        Activate();
+    }
+
+    private void Tuck()
+    {
+        if (!settings.UseTray)
+            return;
+
+        tray.Visible = true;
+        if (tray.Visible)
+            Hide();
     }
 
     private async Task LoadAsync()
@@ -68,7 +124,49 @@ public partial class MainWindow : Window
 
         LoginWindow.ClearProfiles();
 
-        await TryAsync(() => Task.WhenAll(roster.Accounts.ToList().Select(roster.RefreshAsync)));
+        freshen.Start();
+        await RefreshAllAsync();
+
+        if (settings.CheckUpdates)
+            await CheckUpdateAsync();
+    }
+
+    private async Task CheckUpdateAsync()
+    {
+        if (typeof(App).Assembly.GetName().Version is not { } current
+            || await Release.FindNewerAsync(Updates, current) is not { } found)
+            return;
+
+        update = found;
+        UpdateText.Text = $"JagexManager {found.Version.ToString(3)} is available.";
+        UpdateBar.Visibility = Visibility.Visible;
+    }
+
+    private void OpenUpdate(object sender, RoutedEventArgs e)
+    {
+        if (update is { } release)
+            Try(() => { using var browser = Process.Start(new ProcessStartInfo(release.Page.AbsoluteUri) { UseShellExecute = true }); });
+    }
+
+    private void DismissUpdate(object sender, RoutedEventArgs e) => UpdateBar.Visibility = Visibility.Collapsed;
+
+    private async Task RefreshAllAsync()
+    {
+        if (refreshing)
+            return;
+
+        refreshing = true;
+        refreshed = DateTime.UtcNow;
+        try
+        {
+            await TryAsync(() => Task.WhenAll(roster.Accounts.ToList().Select(roster.RefreshAsync)));
+        }
+        finally
+        {
+            refreshing = false;
+            foreach (var account in roster.Accounts)
+                account.Recount();
+        }
     }
 
     private void Open()
@@ -255,7 +353,7 @@ public partial class MainWindow : Window
         moved |= roster.Move(account, above);
     }
 
-    private void Release(object sender, MouseButtonEventArgs e) => List.ReleaseMouseCapture();
+    private void LetGo(object sender, MouseButtonEventArgs e) => List.ReleaseMouseCapture();
 
     private void Settle(object sender, MouseEventArgs e)
     {
@@ -310,6 +408,39 @@ public partial class MainWindow : Window
     private async void Play(object sender, RoutedEventArgs e) =>
         await PlayAsync((CharacterView)((FrameworkElement)sender).DataContext);
 
+    private async void PlayAll(object sender, RoutedEventArgs e)
+    {
+        var account = (AccountView)((FrameworkElement)sender).DataContext;
+        var shown = account.Characters.Where(c => !c.Hidden).ToList();
+        var waiting = shown.Where(c => !c.Running && c.Ready).ToList();
+        if (waiting.Count == 0)
+        {
+            Say(account.Characters.Count == 0 ? $"{account.Name} has no characters yet."
+                : shown.Count == 0 ? $"Every character on {account.Name} is hidden."
+                : $"Every character on {account.Name} is already running.");
+            return;
+        }
+
+        var started = 0;
+        foreach (var character in waiting)
+        {
+            if (!roster.Accounts.Contains(account) || account.Expired)
+                break;
+
+            if (await PlayAsync(character))
+                started++;
+        }
+
+        if (started == waiting.Count)
+            Say(started == 1 ? $"Started {waiting[0].Name}." : $"Started {started} characters on {account.Name}.");
+    }
+
+    private void ToggleHidden(object sender, RoutedEventArgs e)
+    {
+        var account = (AccountView)((FrameworkElement)sender).DataContext;
+        account.ShowHidden = !account.ShowHidden;
+    }
+
     private void OfferClients(object sender, RoutedEventArgs e)
     {
         var button = (Button)sender;
@@ -327,26 +458,67 @@ public partial class MainWindow : Window
         foreach (var program in installed)
             menu.Items.Add(ClientItem(character, program.Name, program.Name));
         menu.Items.Add(new Separator());
-        menu.Items.Add(SessionItem(character));
+        AddCharacterItems(menu, character);
 
         menu.IsOpen = true;
     }
 
-    private void OfferSession(object sender, MouseButtonEventArgs e)
+    private void OfferCharacter(object sender, MouseButtonEventArgs e)
     {
         var row = (FrameworkElement)sender;
         var menu = MenuBelow(row);
         menu.Placement = PlacementMode.MousePoint;
-        menu.Items.Add(SessionItem((CharacterView)row.DataContext));
+        AddCharacterItems(menu, (CharacterView)row.DataContext);
         menu.IsOpen = true;
         e.Handled = true;
     }
 
-    private MenuItem SessionItem(CharacterView character)
+    private void AddCharacterItems(ContextMenu menu, CharacterView character)
     {
-        var item = new MenuItem { Header = "_Copy session details", IsEnabled = !character.Owner.Expired };
-        item.Click += (_, _) => CopySession(character);
+        menu.Items.Add(Item("_Rename…", () => Rename(character)));
+        menu.Items.Add(Item("_Launch options…", () => AskOptions(character)));
+        menu.Items.Add(Item(character.Hidden ? "_Show" : "_Hide", () => Hide(character)));
+        menu.Items.Add(new Separator());
+
+        var copy = Item("_Copy session details", () => CopySession(character));
+        copy.IsEnabled = !character.Owner.Expired;
+        menu.Items.Add(copy);
+    }
+
+    private static MenuItem Item(string header, Action click)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => click();
         return item;
+    }
+
+    private void Rename(CharacterView character)
+    {
+        var real = character.Character.Name;
+        var answer = Prompt.Ask(this, "Rename", $"Name to show for {(real.Length > 0 ? real : character.Name)}",
+            "Only shown in JagexManager. Leave it empty to show the character's own name.",
+            character.Name == real ? "" : character.Name, 32);
+
+        if (answer is not null && Try(() => roster.Rename(character, answer)))
+            Say(answer.Trim().Length > 0 ? $"Renamed {real} to {character.Name}." : $"{character.Name} shows its own name again.");
+    }
+
+    private void AskOptions(CharacterView character)
+    {
+        var client = settings.Find(character.Choice).Name;
+        var answer = Prompt.Ask(this, "Launch options", $"Launch options for {character.Name}",
+            $"Used instead of the launch options in Settings, with whichever client this character plays ({client} now). Leave it empty to use the ones in Settings.",
+            character.Options ?? "", 1000);
+
+        if (answer is not null && Try(() => roster.SetOptions(character, answer)))
+            Say(character.Options is { } options ? $"{character.Name} starts with {options}." : $"{character.Name} uses the launch options in Settings.");
+    }
+
+    private void Hide(CharacterView character)
+    {
+        var hidden = !character.Hidden;
+        if (Try(() => roster.Hide(character, hidden)))
+            Say(hidden ? $"Hid {character.Name}. Show hidden characters at the bottom of {character.Owner.Name} brings it back." : $"{character.Name} is shown again.");
     }
 
     private void CopySession(CharacterView character)
@@ -401,9 +573,10 @@ public partial class MainWindow : Window
 
     private static string Literal(string label) => label.Replace("_", "__");
 
-    private async Task PlayAsync(CharacterView character)
+    private async Task<bool> PlayAsync(CharacterView character)
     {
-        var program = settings.Find(character.Choice);
+        var program = settings.Find(character.Choice, character.Options);
+        var started = false;
 
         character.Ready = false;
         try
@@ -411,6 +584,7 @@ public partial class MainWindow : Window
             await TryAsync(async () =>
             {
                 await roster.PlayAsync(character, program);
+                started = true;
                 Say($"Started {character.Name} in {program.Name}.");
             });
         }
@@ -418,6 +592,8 @@ public partial class MainWindow : Window
         {
             character.Ready = true;
         }
+
+        return started;
     }
 
     private void Stop(object sender, RoutedEventArgs e)
@@ -490,6 +666,19 @@ public partial class MainWindow : Window
         ShowSettings();
     }
 
+    private void ChangeUpdates(object sender, RoutedEventArgs e) =>
+        Change(settings with { CheckUpdates = UpdatesBox.IsChecked == true });
+
+    private void ChangeTray(object sender, RoutedEventArgs e) =>
+        Change(settings with { UseTray = TrayBox.IsChecked == true });
+
+    private void ChangeAutostart(object sender, RoutedEventArgs e)
+    {
+        var wanted = AutostartBox.IsChecked == true;
+        Try(() => Autostart.Current.Set(wanted));
+        ShowSettings();
+    }
+
     private void OpenFolder(object sender, RoutedEventArgs e) => Try(() =>
     {
         Directory.CreateDirectory(App.DataFolder);
@@ -530,6 +719,10 @@ public partial class MainWindow : Window
         LauncherSection.Visibility = Launcher.Installed ? Visibility.Visible : Visibility.Collapsed;
         RuneScapeFont.IsEnabled = fontOffered || gameFont;
         FontChoice.SelectedItem = gameFont ? RuneScapeFont : DefaultFont;
+
+        UpdatesBox.IsChecked = settings.CheckUpdates;
+        TrayBox.IsChecked = settings.UseTray;
+        AutostartBox.IsChecked = Autostart.Current.Enabled;
     }
 
     private void ShowFont(bool wanted)
@@ -606,6 +799,8 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         watch.Stop();
+        freshen.Stop();
+        tray.Dispose();
         roster.Forget();
         base.OnClosed(e);
     }

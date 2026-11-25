@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -16,6 +17,7 @@ public partial class App : Application
     };
 
     private static Mutex? instance;
+    private static EventWaitHandle? opening;
 
     private static Theme theme;
 
@@ -40,17 +42,31 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        var hidden = e.Args.Contains(Autostart.Hidden);
+        opening = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\JagexManager.Open", out var unheard);
         instance = new Mutex(initiallyOwned: true, @"Local\JagexManager", out var first);
         if (!first)
         {
-            MessageBox.Show("JagexManager is already running.", "JagexManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!hidden && unheard)
+            {
+                MessageBox.Show("JagexManager is already running.", "JagexManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else if (!hidden)
+            {
+                AllowSetForegroundWindow(-1);
+                opening.Set();
+            }
+
             Shutdown();
             return;
         }
 
         DispatcherUnhandledException += Report;
         SystemParameters.StaticPropertyChanged += FollowContrast;
-        new MainWindow().Show();
+
+        var window = new MainWindow();
+        ThreadPool.RegisterWaitForSingleObject(opening, (_, _) => Dispatcher.BeginInvoke(window.Bring), null, Timeout.Infinite, executeOnlyOnce: false);
+        window.Start(hidden);
     }
 
     private static void FollowContrast(object? sender, PropertyChangedEventArgs e)
@@ -58,6 +74,10 @@ public partial class App : Application
         if (e.PropertyName == nameof(SystemParameters.HighContrast))
             Show(theme);
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AllowSetForegroundWindow(int process);
 
     private void Report(object sender, DispatcherUnhandledExceptionEventArgs e)
     {

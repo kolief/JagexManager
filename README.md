@@ -13,9 +13,12 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
   password.
 - Play any character in RuneLite, the official Old School client, RuneScape 3,
   or any other client you add.
-- Run several characters at once, from one account or many.
-- Choose a different client for each character.
+- Run several characters at once, from one account or many, or start every
+  character on an account with one click.
+- Choose a different client and launch options for each character, give
+  characters your own names, and hide the ones you never play.
 - See whether each character is P2P, with the days of membership left, or F2P.
+  The days turn amber when membership is about to run out.
 - Open the Jagex Launcher signed in to any of your accounts, or sign it out.
 - Use RuneLite's colours and the RuneScape font.
 
@@ -30,17 +33,24 @@ Windows 10 or 11 with RuneLite or the Jagex Launcher installed.
 2. Click **Play** next to a character.
 3. To use a different client for a character, click the arrow next to Play and
    pick one. It is remembered for that character.
-4. To open the Jagex Launcher signed in to an account, click the
+4. Right-click a character, or use the same arrow, to rename it, give it its
+   own launch options (such as `--profile=Iron`), or hide it.
+5. To open the Jagex Launcher signed in to an account, click the
    **Open in the Jagex Launcher** icon on that account. If the launcher is
    already open, it is closed and reopened.
-5. To use a character in another program, right-click it and choose
+6. To use a character in another program, right-click it and choose
    **Copy session details**. This copies its `JX_SESSION_ID`, `JX_CHARACTER_ID`
    and `JX_DISPLAY_NAME`. Anyone with these can play as that character until the
    session ends, so only paste them into programs you trust.
 
 The **Settings** tab has the default client and its launch options (such as
-RuneLite's `--profile=Main`), the theme, the font, and a button to sign the
-Jagex Launcher out.
+RuneLite's `--profile=Main`), the theme, the font, starting with Windows,
+minimising to the notification area, and a button to sign the Jagex Launcher
+out.
+
+JagexManager asks GitHub for the latest release each time it starts and shows a
+notice when there is a newer one. It never downloads anything by itself. Turn
+this off with **Check for new versions** in Settings.
 
 Accounts are saved encrypted in `%LOCALAPPDATA%\JagexManager`.
 

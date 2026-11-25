@@ -13,6 +13,7 @@
     <Color x:Key="OrangeHover">#F09A0A</Color>
     <Color x:Key="OrangePressed">#B87400</Color>
     <Color x:Key="Red">#FF5A5A</Color>
+    <Color x:Key="Yellow">#FFC83D</Color>
     <Color x:Key="OffWhite">#F2F2F2</Color>
 
     <SolidColorBrush x:Key="ApplicationBackgroundBrush" Color="{StaticResource DarkerGray}" />
@@ -27,6 +28,7 @@
     <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="{StaticResource Orange}" />
     <SolidColorBrush x:Key="SystemFillColorSuccessBrush" Color="{StaticResource Green}" />
     <SolidColorBrush x:Key="SystemFillColorCriticalBrush" Color="{StaticResource Red}" />
+    <SolidColorBrush x:Key="SystemFillColorCautionBrush" Color="{StaticResource Yellow}" />
 
     <SolidColorBrush x:Key="AccentButtonBackground" Color="{StaticResource Orange}" />
     <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="{StaticResource OrangeHover}" />

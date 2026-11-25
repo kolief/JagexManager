@@ -59,6 +59,28 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="Link" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{DynamicResource DefaultControlFocusVisualStyle}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock x:Name="Text" Text="{TemplateBinding Content}" Background="Transparent" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Text" Property="TextDecorations" Value="Underline" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="Section" TargetType="Border" BasedOn="{StaticResource Card}">
             <Setter Property="Padding" Value="16,12" />
         </Style>
@@ -141,6 +163,19 @@
             <TextBlock x:Name="Status" Style="{StaticResource Note}" AutomationProperties.LiveSetting="Polite" />
         </Border>
 
+        <Border x:Name="UpdateBar" DockPanel.Dock="Bottom" Padding="20,8" BorderThickness="0,1,0,0" Visibility="Collapsed"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Click="DismissUpdate" Margin="12,0,0,0" Style="{StaticResource Link}"
+                        Content="Not now" VerticalAlignment="Center" />
+                <Button DockPanel.Dock="Right" Click="OpenUpdate" Margin="12,0,0,0" Style="{StaticResource Link}"
+                        Content="Download" VerticalAlignment="Center" />
+                <TextBlock x:Name="UpdateText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           AutomationProperties.LiveSetting="Polite" />
+            </DockPanel>
+        </Border>
+
         <DockPanel DockPanel.Dock="Top" Margin="20,16,20,12">
             <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
                 <RadioButton x:Name="AccountsTab" Content="Accounts" Style="{StaticResource Tab}" IsChecked="True" />
@@ -165,7 +200,7 @@
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,0">
                     <ItemsControl x:Name="List" IsTabStop="False"
-                                  MouseMove="Drag" MouseLeftButtonUp="Release" LostMouseCapture="Settle">
+                                  MouseMove="Drag" MouseLeftButtonUp="LetGo" LostMouseCapture="Settle">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type core:AccountView}">
                                 <Border Style="{StaticResource Card}">
@@ -189,6 +224,12 @@
                                                     <TextBlock Text="&#xE8A7;" Style="{StaticResource Icon}" FontSize="14" />
                                                 </Button>
                                             </ContentControl>
+                                            <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Click="PlayAll" Margin="8,0,0,0"
+                                                    VerticalAlignment="Center" ToolTip="Play every character"
+                                                    AutomationProperties.Name="{Binding Name, StringFormat=Play every character on {0}}"
+                                                    Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
+                                                <TextBlock Text="&#xE768;" Style="{StaticResource Icon}" FontSize="14" />
+                                            </Button>
                                             <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Click="Refresh" Margin="8,0,0,0"
                                                     VerticalAlignment="Center" ToolTip="Check for new characters"
                                                     AutomationProperties.Name="{Binding Name, StringFormat=Check {0} for new characters}"
@@ -214,8 +255,20 @@
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate DataType="{x:Type core:CharacterView}">
                                                     <Border BorderThickness="0,1,0,0" Padding="16,8,12,8" Background="Transparent"
-                                                            MouseRightButtonUp="OfferSession"
+                                                            MouseRightButtonUp="OfferCharacter"
                                                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Visible}" Value="False">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Hidden}" Value="True">
+                                                                        <Setter Property="Opacity" Value="0.6" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
                                                         <DockPanel>
                                                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                                                 <Button Padding="{StaticResource ButtonPadding}" MinWidth="64" Click="Play"
@@ -257,14 +310,24 @@
                                                                                 Background="{Binding (TextElement.Foreground), RelativeSource={RelativeSource Self}}" />
                                                                         <TextBlock Text="{Binding Membership}" Margin="5,1" />
                                                                     </Grid>
-                                                                    <TextBlock Text="{Binding MembershipLeft}" Margin="6,0,0,0" FontSize="12"
-                                                                               VerticalAlignment="Center" Style="{StaticResource Secondary}" />
+                                                                    <TextBlock Text="{Binding MembershipLeft}" Margin="6,0,0,0" FontSize="12" VerticalAlignment="Center">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource Secondary}">
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Lapsing}" Value="True">
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
                                                                 </StackPanel>
-                                                                <TextBlock Text="{Binding Choice}" TextTrimming="CharacterEllipsis">
+                                                                <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis"
+                                                                           ToolTip="{Binding Detail}">
                                                                     <TextBlock.Style>
                                                                         <Style TargetType="TextBlock" BasedOn="{StaticResource Secondary}">
                                                                             <Style.Triggers>
-                                                                                <DataTrigger Binding="{Binding Choice}" Value="{x:Null}">
+                                                                                <DataTrigger Binding="{Binding Detail}" Value="{x:Null}">
                                                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                                                 </DataTrigger>
                                                                                 <DataTrigger Binding="{Binding Running}" Value="True">
@@ -283,6 +346,21 @@
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
+
+                                        <Border BorderThickness="0,1,0,0" Padding="16,8,12,8"
+                                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HiddenCount}" Value="0">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Button Click="ToggleHidden" Content="{Binding HiddenNote}" HorizontalAlignment="Left"
+                                                    Style="{StaticResource Link}" FontSize="12" />
+                                        </Border>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -347,6 +425,19 @@
                                 </ComboBox>
                                 <TextBlock x:Name="FontLabel" Text="Font" VerticalAlignment="Center" />
                             </DockPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="General" Style="{StaticResource Heading}" />
+                            <CheckBox x:Name="AutostartBox" Content="Start with Windows" Click="ChangeAutostart"
+                                      AutomationProperties.HelpText="Starts minimised when you sign in to Windows" />
+                            <CheckBox x:Name="TrayBox" Content="Minimise to the notification area" Click="ChangeTray" Margin="0,4,0,0" />
+                            <CheckBox x:Name="UpdatesBox" Content="Check for new versions" Click="ChangeUpdates" Margin="0,4,0,0"
+                                      AutomationProperties.HelpText="{Binding Text, ElementName=UpdatesNote}" />
+                            <TextBlock x:Name="UpdatesNote" Margin="0,4,0,0" Style="{StaticResource Note}"
+                                       Text="Asks GitHub for the latest release when JagexManager starts. Nothing is downloaded by itself." />
                         </StackPanel>
                     </Border>
 

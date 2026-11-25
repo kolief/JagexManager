@@ -30,6 +30,10 @@ public sealed record Settings
 
     public bool UseGameFont { get; init; } = true;
 
+    public bool CheckUpdates { get; init; } = true;
+
+    public bool UseTray { get; init; }
+
     [JsonIgnore]
     public IReadOnlyList<Program> Programs =>
         Offered.Select(p => p with { Arguments = $"{p.Arguments} {Options.GetValueOrDefault(p.Name)}".Trim() }).ToList();
@@ -48,6 +52,16 @@ public sealed record Settings
         return programs.FirstOrDefault(p => p.Name == name)
             ?? programs.FirstOrDefault(p => p.Name == Default)
             ?? programs[0];
+    }
+
+    public Program Find(string? name, string? options)
+    {
+        var program = Find(name);
+        if (options is null)
+            return program;
+
+        var plain = Offered.First(p => p.Name == program.Name);
+        return program with { Arguments = $"{plain.Arguments} {options}".Trim() };
     }
 
     public bool Removable(string name) => Custom.Any(p => p.Name == name);
@@ -93,11 +107,13 @@ public sealed record Settings
         && Default == other.Default
         && Theme == other.Theme
         && UseGameFont == other.UseGameFont
+        && CheckUpdates == other.CheckUpdates
+        && UseTray == other.UseTray
         && Custom.SequenceEqual(other.Custom)
         && Options.Count == other.Options.Count
         && Options.All(o => other.Options.GetValueOrDefault(o.Key) == o.Value);
 
-    public override int GetHashCode() => HashCode.Combine(Default, Theme, UseGameFont, Custom.Count, Options.Count);
+    public override int GetHashCode() => HashCode.Combine(Default, Theme, UseGameFont, CheckUpdates, UseTray, Custom.Count, Options.Count);
 
     public static Settings Load(string path)
     {
@@ -121,6 +137,8 @@ public sealed record Settings
                 Options = Texts(root, nameof(Options)),
                 Theme = Enum.GetNames<Theme>().Contains(theme) ? Enum.Parse<Theme>(theme!) : defaults.Theme,
                 UseGameFont = Flag(root, nameof(UseGameFont)) ?? defaults.UseGameFont,
+                CheckUpdates = Flag(root, nameof(CheckUpdates)) ?? defaults.CheckUpdates,
+                UseTray = Flag(root, nameof(UseTray)) ?? defaults.UseTray,
             };
 
             if (Legacy(root))

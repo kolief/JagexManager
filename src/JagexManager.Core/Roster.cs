@@ -27,7 +27,11 @@ public sealed class Roster(Vault vault, Jagex jagex)
     {
         if (Accounts.FirstOrDefault(a => a.Account.Id == account.Id) is { } known)
         {
-            known.Update(account with { Choices = Kept(known.Account.Choices, account.Characters) });
+            known.Update(account with
+            {
+                Choices = Kept(known.Account.Choices, account.Characters),
+                Preferences = Kept(known.Account.Preferences, account.Characters),
+            });
             known.Expired = false;
         }
         else
@@ -76,8 +80,12 @@ public sealed class Roster(Vault vault, Jagex jagex)
             account.Expired = false;
             if (!characters.SequenceEqual(account.Account.Characters))
             {
-                var choices = Kept(account.Account.Choices, characters);
-                account.Update(account.Account with { Characters = characters, Choices = choices });
+                account.Update(account.Account with
+                {
+                    Characters = characters,
+                    Choices = Kept(account.Account.Choices, characters),
+                    Preferences = Kept(account.Account.Preferences, characters),
+                });
                 Save();
             }
 
@@ -110,6 +118,15 @@ public sealed class Roster(Vault vault, Jagex jagex)
         account.Update(account.Account with { Choices = choices });
         Save();
     }
+
+    public void Rename(CharacterView character, string? nickname) =>
+        Prefer(character, p => p with { Nickname = Typed(nickname) });
+
+    public void SetOptions(CharacterView character, string? options) =>
+        Prefer(character, p => p with { Options = Typed(options) });
+
+    public void Hide(CharacterView character, bool hidden) =>
+        Prefer(character, p => p with { Hidden = hidden });
 
     public void Prune(IEnumerable<string> names)
     {
@@ -229,10 +246,28 @@ public sealed class Roster(Vault vault, Jagex jagex)
         Save();
     }
 
+    private void Prefer(CharacterView character, Func<Preference, Preference> change)
+    {
+        var account = character.Owner;
+        if (!account.Characters.Contains(character))
+            return;
+
+        var id = character.Character.Id;
+        var preferences = account.Account.Preferences.Where(p => p.Key != id).ToDictionary();
+        var changed = change(account.Account.Preferences.GetValueOrDefault(id) ?? Preference.None);
+        if (changed != Preference.None)
+            preferences[id] = changed;
+
+        account.Update(account.Account with { Preferences = preferences });
+        Save();
+    }
+
+    private static string? Typed(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
     private static bool Unreachable(Exception e) =>
         e is JagexException or HttpRequestException or TaskCanceledException;
 
-    private static Dictionary<string, string> Kept(
-        IReadOnlyDictionary<string, string> choices, IReadOnlyList<Character> characters) =>
-        choices.Where(choice => characters.Any(c => c.Id == choice.Key)).ToDictionary();
+    private static Dictionary<string, T> Kept<T>(
+        IReadOnlyDictionary<string, T> kept, IReadOnlyList<Character> characters) =>
+        kept.Where(entry => characters.Any(c => c.Id == entry.Key)).ToDictionary();
 }

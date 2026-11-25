@@ -24,7 +24,12 @@ public sealed class Vault(string path)
             if (accounts is null || !accounts.All(Complete))
                 throw Damaged();
 
-            return accounts.Select(a => a with { Choices = Chosen(a.Choices), Credentials = a.Credentials is { Complete: true } ? a.Credentials : null }).ToList();
+            return accounts.Select(a => a with
+            {
+                Choices = Chosen(a.Choices),
+                Preferences = Preferred(a.Preferences),
+                Credentials = a.Credentials is { Complete: true } ? a.Credentials : null,
+            }).ToList();
         }
         catch (Exception e) when (e is CryptographicException or JsonException)
         {
@@ -51,6 +56,11 @@ public sealed class Vault(string path)
 
     private static Dictionary<string, string> Chosen(IReadOnlyDictionary<string, string>? choices) =>
         (choices ?? FrozenDictionary<string, string>.Empty).Where(c => c.Value is not null).ToDictionary();
+
+    private static Dictionary<string, Preference> Preferred(IReadOnlyDictionary<string, Preference>? preferences) =>
+        (preferences ?? FrozenDictionary<string, Preference>.Empty)
+            .Where(p => p.Value is not null && p.Value != Preference.None)
+            .ToDictionary();
 
     private static InvalidDataException Damaged() => new("The saved accounts could not be read.");
 }
