@@ -242,7 +242,7 @@
                                                                     Content="Play" Tag="&#xE768;" ContentTemplate="{StaticResource IconLabel}"
                                                                     Style="{DynamicResource AccentButtonStyle}"
                                                                     AutomationProperties.Name="{Binding Name, StringFormat=Play group {0}}" />
-                                                            <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferGroupOptions"
+                                                            <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferGroupOptions" VerticalAlignment="Stretch"
                                                                     ToolTip="Group options"
                                                                     AutomationProperties.Name="{Binding Name, StringFormat=Options for {0}}">
                                                                 <TextBlock Text="&#xE70D;" Style="{StaticResource Icon}" />
@@ -348,7 +348,7 @@
                                                                                 IsEnabled="{Binding Ready}" Style="{DynamicResource AccentButtonStyle}"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Play {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Collapsed}}" />
-                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="0,0,4,0" Click="FocusClient"
+                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="0,0,4,0" Click="FocusClient" VerticalAlignment="Stretch"
                                                                                 ToolTip="Show the game window"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Show the game window for {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Visible}}">
@@ -358,7 +358,7 @@
                                                                                 Content="Stop" Tag="&#xE71A;" ContentTemplate="{StaticResource IconLabel}"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Stop {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Visible}}" />
-                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferClients"
+                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferClients" VerticalAlignment="Stretch"
                                                                                 ToolTip="Choose a client" IsEnabled="{Binding Ready}"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Choose a client for {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Collapsed}}">
