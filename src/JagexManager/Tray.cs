@@ -56,7 +56,7 @@ public sealed class Tray : IDisposable
 
     public bool Tell(string title, string text)
     {
-        if (!Show())
+        if (!shown)
             return false;
 
         var data = Data();

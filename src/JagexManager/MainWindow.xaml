@@ -238,10 +238,17 @@
                                             <DataTemplate DataType="{x:Type core:Group}">
                                                 <Border Style="{StaticResource Row}" MouseRightButtonUp="OfferGroup">
                                                     <DockPanel>
-                                                        <Button DockPanel.Dock="Right" Padding="{StaticResource ButtonPadding}" MinWidth="64" Click="PlayGroup"
-                                                                Content="Play" Tag="&#xE768;" ContentTemplate="{StaticResource IconLabel}"
-                                                                Style="{DynamicResource AccentButtonStyle}"
-                                                                AutomationProperties.Name="{Binding Name, StringFormat=Play {0}}" />
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                            <Button Padding="{StaticResource ButtonPadding}" MinWidth="64" Click="PlayGroup"
+                                                                    Content="Play" Tag="&#xE768;" ContentTemplate="{StaticResource IconLabel}"
+                                                                    Style="{DynamicResource AccentButtonStyle}"
+                                                                    AutomationProperties.Name="{Binding Name, StringFormat=Play {0}}" />
+                                                            <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferGroupMenu"
+                                                                    ToolTip="Group options"
+                                                                    AutomationProperties.Name="{Binding Name, StringFormat=Options for {0}}">
+                                                                <TextBlock Text="&#xE70D;" Style="{StaticResource Icon}" />
+                                                            </Button>
+                                                        </StackPanel>
                                                         <StackPanel VerticalAlignment="Center">
                                                             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Text="{Binding Detail}" Style="{StaticResource Secondary}"
@@ -266,7 +273,7 @@
                                             <Border.Style>
                                                 <Style TargetType="Border" BasedOn="{StaticResource Card}">
                                                     <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Shown}" Value="False">
+                                                        <DataTrigger Binding="{Binding Matched}" Value="False">
                                                             <Setter Property="Visibility" Value="Collapsed" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
@@ -342,7 +349,7 @@
                                                                                 IsEnabled="{Binding Ready}" Style="{DynamicResource AccentButtonStyle}"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Play {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Collapsed}}" />
-                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="0,0,4,0" Click="ShowClient"
+                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="0,0,4,0" Click="FocusClient"
                                                                                 ToolTip="Show the game window"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Show the game window for {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Visible}}">
@@ -419,10 +426,9 @@
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
 
-                                                <Border BorderThickness="0,1,0,0" Padding="16,8,12,8"
-                                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+                                                <Border>
                                                     <Border.Style>
-                                                        <Style TargetType="Border">
+                                                        <Style TargetType="Border" BasedOn="{StaticResource Row}">
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding HiddenOffered}" Value="False">
                                                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -517,13 +523,13 @@
                             </DockPanel>
 
                             <DockPanel Margin="0,8,0,0">
-                                <ComboBox x:Name="OrderChoice" DockPanel.Dock="Right" MinWidth="160" SelectedValuePath="Tag"
-                                          SelectionChanged="ChangeOrder"
-                                          AutomationProperties.LabeledBy="{Binding ElementName=OrderLabel}">
-                                    <ComboBoxItem Content="Jagex order" Tag="{x:Static core:Order.Jagex}" />
-                                    <ComboBoxItem Content="Last played" Tag="{x:Static core:Order.Played}" />
+                                <ComboBox x:Name="SortChoice" DockPanel.Dock="Right" MinWidth="160" SelectedValuePath="Tag"
+                                          SelectionChanged="ChangeSort"
+                                          AutomationProperties.LabeledBy="{Binding ElementName=SortLabel}">
+                                    <ComboBoxItem Content="Jagex order" Tag="{x:Static core:Sort.Jagex}" />
+                                    <ComboBoxItem Content="Last played" Tag="{x:Static core:Sort.Played}" />
                                 </ComboBox>
-                                <TextBlock x:Name="OrderLabel" Text="Sort characters" VerticalAlignment="Center" />
+                                <TextBlock x:Name="SortLabel" Text="Sort characters" VerticalAlignment="Center" />
                             </DockPanel>
                         </StackPanel>
                     </Border>
@@ -535,7 +541,7 @@
                                       AutomationProperties.HelpText="Starts minimised when you sign in to Windows" />
                             <CheckBox x:Name="TrayBox" Content="Minimise to the notification area" Click="ChangeTray" Margin="0,4,0,0" />
                             <CheckBox x:Name="WarnBox" Content="Warn before a membership runs out" Click="ChangeWarn" Margin="0,4,0,0"
-                                      AutomationProperties.HelpText="Three days before a membership that does not renew ends" />
+                                      AutomationProperties.HelpText="Shows a notice when a membership that does not renew is about to end" />
                             <CheckBox x:Name="UpdatesBox" Content="Check for new versions" Click="ChangeUpdates" Margin="0,4,0,0"
                                       AutomationProperties.HelpText="{Binding Text, ElementName=UpdatesNote}" />
                             <TextBlock x:Name="UpdatesNote" Margin="0,4,0,0" Style="{StaticResource Note}"

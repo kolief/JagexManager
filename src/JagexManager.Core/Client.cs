@@ -72,14 +72,14 @@ public sealed class Client : IDisposable
             throw new Win32Exception();
     }
 
-    public bool Show()
+    public bool Focus()
     {
         var window = Windows().OrderByDescending(Area).FirstOrDefault();
         if (window == 0)
             return false;
 
         if (IsIconic(window))
-            _ = ShowWindow(window, Restore);
+            _ = ShowWindowAsync(window, Restore);
 
         return SetForegroundWindow(window);
     }
@@ -95,11 +95,11 @@ public sealed class Client : IDisposable
 
         _ = EnumWindows((window, _) =>
         {
-            if (IsWindowVisible(window)
+            if (GetWindowThreadProcessId(window, out var process) != 0
+                && processes.Contains(process)
+                && IsWindowVisible(window)
                 && GetWindow(window, Owner) == 0
-                && GetWindowTextLength(window) > 0
-                && GetWindowThreadProcessId(window, out var process) != 0
-                && processes.Contains(process))
+                && GetWindowTextLength(window) > 0)
                 found.Add(window);
 
             return true;
@@ -208,7 +208,7 @@ public sealed class Client : IDisposable
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ShowWindow(nint window, int command);
+    private static extern bool ShowWindowAsync(nint window, int command);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

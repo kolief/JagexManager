@@ -4,7 +4,7 @@ namespace JagexManager;
 
 public sealed class CharacterView : View
 {
-    private static readonly TimeSpan LapseWarning = TimeSpan.FromDays(3);
+    public static readonly TimeSpan LapseWarning = TimeSpan.FromDays(3);
 
     private Character character;
     private Client? client;
@@ -16,7 +16,7 @@ public sealed class CharacterView : View
         this.character = character;
         owner.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(AccountView.ShowHidden) or nameof(AccountView.Filter))
+            if (e.PropertyName is nameof(AccountView.ShowHidden) or nameof(AccountView.Search))
                 Raise(nameof(Visible));
         };
     }
@@ -53,7 +53,7 @@ public sealed class CharacterView : View
 
     public bool Listed => !Hidden || Owner.ShowHidden || Running;
 
-    public bool Visible => Owner.Filter is { } filter ? Matches(filter) || (Listed && Owner.Named(filter)) : Listed;
+    public bool Visible => Owner.Search is { } search ? Matches(search) || (Listed && Owner.Named(search)) : Listed;
 
     public string? Detail
     {
@@ -74,9 +74,9 @@ public sealed class CharacterView : View
         _ => "F2P",
     };
 
-    public string? TimeLeft => character.Membership is { Active: true, Ends: { } ends } ? Days(ends) : null;
+    public string? DaysLeft => character.Membership is { Active: true, Ends: { } ends } ? Days(ends) : null;
 
-    public string? MembershipLeft => TimeLeft is { } left ? $"{left} left" : null;
+    public string? MembershipLeft => DaysLeft is { } left ? $"{left} left" : null;
 
     public bool Lapsing =>
         character.Membership is { Active: true, Renews: false, Ends: { } ends } && ends - DateTimeOffset.UtcNow <= LapseWarning;
@@ -104,13 +104,13 @@ public sealed class CharacterView : View
         || RealName.Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
     public void Tick() =>
-        Raise(nameof(Member), nameof(Membership), nameof(TimeLeft), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing), nameof(Detail));
+        Raise(nameof(Member), nameof(Membership), nameof(DaysLeft), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing), nameof(Detail));
 
     public void Attach(Client started) => Set(ref client, started, nameof(Running), nameof(Visible));
 
     public void Stop() => client?.Stop();
 
-    public bool Show() => client?.Show() ?? false;
+    public bool Focus() => client?.Focus() ?? false;
 
     public void DropClosed()
     {

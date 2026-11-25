@@ -5,6 +5,8 @@ namespace JagexManager;
 
 public static partial class Profiles
 {
+    private const int NameLimit = 64;
+
     public static string Saved { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".runelite", "profiles2", "profiles.json");
 
@@ -43,6 +45,12 @@ public static partial class Profiles
         return match.Groups["quoted"].Success ? match.Groups["quoted"].Value : match.Groups["plain"].Value;
     }
 
+    public static string? Pick(string? own, string? shared, string profile)
+    {
+        var picked = With(own ?? shared, profile);
+        return picked == Preference.Clean(shared) ? null : picked;
+    }
+
     public static string? With(string? options, string? profile)
     {
         var rest = Flag().Replace(options ?? "", "").Trim();
@@ -61,7 +69,11 @@ public static partial class Profiles
             : null;
 
     private static bool Usable(string name) =>
-        name.Length > 0 && name == name.Trim() && !name.Any(c => c == '"' || char.IsControl(c));
+        name.Length is > 0 and <= NameLimit
+        && name == name.Trim()
+        && !name.StartsWith('$')
+        && !name.EndsWith('\\')
+        && !name.Any(c => c == '"' || char.IsControl(c));
 
     [GeneratedRegex("(?<=^|\\s)--profile(?:=|\\s+)(?:\"(?<quoted>[^\"]*)\"|(?<plain>[^\\s\"]+))\\s*")]
     private static partial Regex Flag();

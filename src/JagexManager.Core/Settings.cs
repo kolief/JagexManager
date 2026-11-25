@@ -12,7 +12,7 @@ public enum Theme
     Dark,
 }
 
-public enum Order
+public enum Sort
 {
     Jagex,
     Played,
@@ -26,7 +26,7 @@ public sealed record Settings
         Converters = { new JsonStringEnumConverter() },
     };
 
-    public const int MaxGap = 60;
+    public static IReadOnlyList<int> Gaps { get; } = [0, 3, 5, 10, 20];
 
     public string Default { get; init; } = Program.RuneLite;
 
@@ -44,12 +44,9 @@ public sealed record Settings
 
     public bool WarnMembership { get; init; } = true;
 
-    public Order Order { get; init; } = Order.Jagex;
+    public Sort Sort { get; init; } = Sort.Jagex;
 
     public int Gap { get; init; } = 5;
-
-    [JsonIgnore]
-    public TimeSpan Wait => TimeSpan.FromSeconds(Gap);
 
     [JsonIgnore]
     public IReadOnlyList<Program> Programs => Offered.Select(p => Launch(p, Options.GetValueOrDefault(p.Name))).ToList();
@@ -117,14 +114,14 @@ public sealed record Settings
         && CheckUpdates == other.CheckUpdates
         && UseTray == other.UseTray
         && WarnMembership == other.WarnMembership
-        && Order == other.Order
+        && Sort == other.Sort
         && Gap == other.Gap
         && Custom.SequenceEqual(other.Custom)
         && Options.Count == other.Options.Count
         && Options.All(o => other.Options.GetValueOrDefault(o.Key) == o.Value);
 
     public override int GetHashCode() =>
-        HashCode.Combine(Default, Theme, UseGameFont, CheckUpdates, UseTray, WarnMembership, Order, HashCode.Combine(Gap, Custom.Count, Options.Count));
+        HashCode.Combine(Default, Theme, UseGameFont, CheckUpdates, UseTray, WarnMembership, Sort, HashCode.Combine(Gap, Custom.Count, Options.Count));
 
     public static Settings Load(string path)
     {
@@ -140,7 +137,7 @@ public sealed record Settings
                 return defaults;
 
             var theme = Text(root, nameof(Theme));
-            var order = Text(root, nameof(Order));
+            var sort = Text(root, nameof(Sort));
 
             var settings = new Settings
             {
@@ -152,8 +149,8 @@ public sealed record Settings
                 CheckUpdates = Flag(root, nameof(CheckUpdates)) ?? defaults.CheckUpdates,
                 UseTray = Flag(root, nameof(UseTray)) ?? defaults.UseTray,
                 WarnMembership = Flag(root, nameof(WarnMembership)) ?? defaults.WarnMembership,
-                Order = Enum.GetNames<Order>().Contains(order) ? Enum.Parse<Order>(order!) : defaults.Order,
-                Gap = Math.Clamp(Number(root, nameof(Gap)) ?? defaults.Gap, 0, MaxGap),
+                Sort = Enum.GetNames<Sort>().Contains(sort) ? Enum.Parse<Sort>(sort!) : defaults.Sort,
+                Gap = Number(root, nameof(Gap)) is { } gap && Gaps.Contains(gap) ? gap : defaults.Gap,
             };
 
             if (Legacy(root))

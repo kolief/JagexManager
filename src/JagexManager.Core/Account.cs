@@ -23,13 +23,15 @@ public sealed record Preference(string? Choice = null, string? Nickname = null, 
 
     public IReadOnlyList<string> Groups { get; init; } = [];
 
-    public Preference Tidy() => new(Clean(Choice), Clean(Nickname), Clean(Options), Hidden)
+    public Preference Tidy() => this with
     {
-        Played = Played,
+        Choice = Clean(Choice),
+        Nickname = Clean(Nickname),
+        Options = Clean(Options),
         Groups = Grouped(Groups),
     };
 
-    public bool InGroup(string name) => Groups.Contains(name, StringComparer.OrdinalIgnoreCase);
+    public bool InGroup(string name) => Groups.Contains(name, Group.Names);
 
     public bool Equals(Preference? other) =>
         other is not null
@@ -48,8 +50,8 @@ public sealed record Preference(string? Choice = null, string? Nickname = null, 
         (groups ?? [])
             .Select(Clean)
             .OfType<string>()
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
+            .Distinct(Group.Names)
+            .Order(Group.Names)
             .ToList();
 }
 

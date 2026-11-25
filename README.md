@@ -19,11 +19,14 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
 - Bring a running character's game window to the front, or stop it.
 - Choose a different client, launch options and RuneLite profile for each
   character, give characters your own names, and hide the ones you never play.
-- Search your characters, see when each was last played, and sort by it.
+- Search your characters, see when each was last played, and sort by it. The
+  order catches up the next time accounts are checked, so rows never move
+  under your mouse.
 - See whether each character is P2P, with the days of membership left, or F2P.
   The days turn amber in the last three days of a membership that does not
-  renew, and JagexManager warns you when that starts.
-- Start characters and groups from the notification area icon.
+  renew. Each time JagexManager starts, it also warns you about these once.
+- Start characters and groups from the notification area icon when
+  JagexManager is minimised there.
 - Open the Jagex Launcher signed in to any of your accounts, or sign it out.
 - Use RuneLite's colours and the RuneScape font.
 
@@ -63,9 +66,10 @@ several, the theme, the font, how to sort characters, starting with Windows,
 minimising to the notification area, the membership warning, and a button to
 sign the Jagex Launcher out.
 
-When JagexManager is minimised, right-click its notification area icon to start
-a character or group without opening the window. Click a running character
-there to bring its window to the front.
+With **Minimise to the notification area** on, right-click the icon there to
+start a character or group without opening the window. Click a running
+character there to bring its window to the front. Membership warnings appear
+as a notification from that icon, or under the list when the window is open.
 
 Accounts are checked again when you come back to JagexManager after five
 minutes, and every hour while it is open, so new characters and membership days

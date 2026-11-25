@@ -7,8 +7,8 @@ public sealed class AccountView : View
     private Account account;
     private bool expired;
     private bool showHidden;
-    private bool byPlayed;
-    private string? filter;
+    private Sort sort;
+    private string? search;
 
     public AccountView(Account account)
     {
@@ -29,32 +29,35 @@ public sealed class AccountView : View
         var count => $"{count} characters",
     };
 
-    public IReadOnlyList<CharacterView> Playable => Characters.Where(c => !c.Hidden && !c.Running && c.Ready).ToList();
+    public IReadOnlyList<CharacterView> Playable => Characters.Where(c => !c.Hidden && c.Visible && !c.Running && c.Ready).ToList();
 
     public int HiddenCount => Characters.Count(c => c.Hidden);
 
-    public bool HiddenOffered => HiddenCount > 0 && filter is null;
+    public bool HiddenOffered => HiddenCount > 0 && search is null;
 
-    public bool Shown => filter is null || Named(filter) || Characters.Any(c => c.Matches(filter));
+    public bool Matched => search is null || Characters.Any(c => c.Visible);
 
-    public string? Filter
+    public string? Search
     {
-        get => filter;
-        set => Set(ref filter, Preference.Clean(value), nameof(Filter), nameof(Shown), nameof(HiddenOffered));
+        get => search;
+        set => Set(ref search, Preference.Clean(value), nameof(Search), nameof(Matched), nameof(HiddenOffered));
     }
 
-    public bool ByPlayed
+    public Sort Sort
     {
-        get => byPlayed;
+        get => sort;
         set
         {
-            if (byPlayed == value)
+            if (sort == value)
                 return;
 
-            byPlayed = value;
-            Update(account);
+            sort = value;
+            Arrange();
         }
     }
+
+    public IEnumerable<CharacterView> InJagexOrder =>
+        account.Characters.Select(c => Characters.First(row => row.Character.Id == c.Id));
 
     public bool Named(string text) => Name.Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
@@ -83,7 +86,11 @@ public sealed class AccountView : View
             character.Tick();
     }
 
-    public void Update(Account latest)
+    public void Arrange() => Place(account, arrange: true);
+
+    public void Update(Account latest) => Place(latest, arrange: false);
+
+    private void Place(Account latest, bool arrange)
     {
         account = latest;
 
@@ -93,7 +100,7 @@ public sealed class AccountView : View
             Characters.Remove(gone);
         }
 
-        var ordered = Ordered(latest);
+        var ordered = Ordered(latest, arrange);
         for (var position = 0; position < ordered.Count; position++)
         {
             var character = ordered[position];
@@ -110,13 +117,20 @@ public sealed class AccountView : View
                 Characters.Move(current, position);
         }
 
-        Raise(nameof(Account), nameof(Name), nameof(Summary), nameof(HiddenCount), nameof(HiddenLink), nameof(HiddenOffered), nameof(Shown));
+        Raise(nameof(Account), nameof(Name), nameof(Summary), nameof(HiddenCount), nameof(HiddenLink), nameof(HiddenOffered), nameof(Matched));
         if (HiddenCount == 0)
             ShowHidden = false;
     }
 
-    private IReadOnlyList<Character> Ordered(Account latest) =>
-        byPlayed
-            ? latest.Characters.OrderByDescending(c => latest.Preferences.GetValueOrDefault(c.Id)?.Played ?? DateTimeOffset.MinValue).ToList()
-            : latest.Characters;
+    private IReadOnlyList<Character> Ordered(Account latest, bool arrange)
+    {
+        if (sort == Sort.Jagex)
+            return latest.Characters;
+
+        if (arrange)
+            return latest.Characters.OrderByDescending(c => latest.Preferences.GetValueOrDefault(c.Id)?.Played ?? DateTimeOffset.MinValue).ToList();
+
+        var current = Characters.Select(row => row.Character.Id).ToList();
+        return latest.Characters.OrderBy(c => current.IndexOf(c.Id) is var at and >= 0 ? at : int.MaxValue).ToList();
+    }
 }
