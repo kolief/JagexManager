@@ -42,8 +42,11 @@ Run `dotnet format` to fix formatting.
   named `Program` or `Programs` always holds those records; a `Client` is one
   that is running. A client's name is a `Choice` on a character and the
   `Default` in settings. `Custom` holds the clients the user added. Options are
-  what the user typed; arguments are the whole command line. `Tokens` is the
-  token endpoint's reply; `Credentials` is the set kept for the Jagex Launcher.
+  what the user typed; arguments are the whole command line. A character's
+  `Preference` holds its `Choice`, its `Nickname`, its own `Options` and whether
+  it is `Hidden` from the list; a window that starts out of sight is
+  `Minimised`. `Tokens` is the token endpoint's reply; `Credentials` is the set
+  kept for the Jagex Launcher.
 
 ## How it works
 
@@ -68,8 +71,8 @@ Run `dotnet format` to fix formatting.
 
 | Path | Contents |
 |---|---|
-| `src/JagexManager.Core` | Sign-in flow, Jagex endpoints, encrypted vault, client launch, the Jagex Launcher's sign-in file, and the account list the window binds to. No UI framework. |
-| `src/JagexManager` | The WPF windows, the embedded sign-in browser, the RuneLite colours and the bundled fonts. |
+| `src/JagexManager.Core` | Sign-in flow, Jagex endpoints, encrypted vault, client launch, the Jagex Launcher's sign-in file, the account list the window binds to, the GitHub release check and starting with Windows. No UI framework. |
+| `src/JagexManager` | The WPF windows, the embedded sign-in browser, the tray icon, the RuneLite colours and the bundled fonts. |
 
 ## Changes to the sign-in flow
 

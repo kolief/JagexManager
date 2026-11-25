@@ -27,9 +27,11 @@ public sealed class AccountView : View
         var count => $"{count} characters",
     };
 
+    public IReadOnlyList<CharacterView> Playable => Characters.Where(c => !c.Hidden && !c.Running && c.Ready).ToList();
+
     public int HiddenCount => Characters.Count(c => c.Hidden);
 
-    public string HiddenNote => (ShowHidden, HiddenCount) switch
+    public string HiddenLink => (ShowHidden, HiddenCount) switch
     {
         (true, _) => "Hide them again",
         (false, 1) => "Show 1 hidden character",
@@ -39,16 +41,7 @@ public sealed class AccountView : View
     public bool ShowHidden
     {
         get => showHidden;
-        set
-        {
-            if (showHidden == value)
-                return;
-
-            showHidden = value;
-            Raise(nameof(ShowHidden), nameof(HiddenNote));
-            foreach (var character in Characters)
-                character.Reveal();
-        }
+        set => Set(ref showHidden, value, nameof(ShowHidden), nameof(HiddenLink));
     }
 
     public bool Expired
@@ -57,10 +50,10 @@ public sealed class AccountView : View
         set => Set(ref expired, value, nameof(Expired));
     }
 
-    public void Recount()
+    public void Tick()
     {
         foreach (var character in Characters)
-            character.Recount();
+            character.Tick();
     }
 
     public void Update(Account latest)
@@ -89,9 +82,8 @@ public sealed class AccountView : View
                 Characters.Move(current, position);
         }
 
+        Raise(nameof(Account), nameof(Name), nameof(Summary), nameof(HiddenCount), nameof(HiddenLink));
         if (HiddenCount == 0)
-            showHidden = false;
-
-        Raise(nameof(Account), nameof(Name), nameof(Summary), nameof(HiddenCount), nameof(ShowHidden), nameof(HiddenNote));
+            ShowHidden = false;
     }
 }

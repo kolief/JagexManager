@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Media;
 
 namespace JagexManager;
 
@@ -11,10 +10,7 @@ public partial class Prompt : Window
 
         Owner = owner;
         Title = title;
-        FontFamily = owner.FontFamily;
-        FontSize = owner.FontSize;
-        TextOptions.SetTextFormattingMode(this, TextOptions.GetTextFormattingMode(owner));
-        TextOptions.SetTextRenderingMode(this, TextOptions.GetTextRenderingMode(owner));
+        Display.Match(this, owner);
 
         Question.Text = question;
         Note.Text = note;

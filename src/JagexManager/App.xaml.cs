@@ -16,6 +16,9 @@ public partial class App : Application
         Source = new Uri("/JagexManager;component/RuneLite.xaml", UriKind.Relative),
     };
 
+    private const string OpenSignal = @"Local\JagexManager.Open";
+    private const int AnyProcess = -1;
+
     private static Mutex? instance;
     private static EventWaitHandle? opening;
 
@@ -42,20 +45,12 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        var hidden = e.Args.Contains(Autostart.Hidden);
-        opening = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\JagexManager.Open", out var unheard);
+        var minimised = e.Args.Contains(Autostart.Minimised);
         instance = new Mutex(initiallyOwned: true, @"Local\JagexManager", out var first);
         if (!first)
         {
-            if (!hidden && unheard)
-            {
-                MessageBox.Show("JagexManager is already running.", "JagexManager", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            else if (!hidden)
-            {
-                AllowSetForegroundWindow(-1);
-                opening.Set();
-            }
+            if (!minimised)
+                Reach();
 
             Shutdown();
             return;
@@ -64,9 +59,41 @@ public partial class App : Application
         DispatcherUnhandledException += Report;
         SystemParameters.StaticPropertyChanged += FollowContrast;
 
+        _ = Autostart.Current.Follow();
+
         var window = new MainWindow();
-        ThreadPool.RegisterWaitForSingleObject(opening, (_, _) => Dispatcher.BeginInvoke(window.Bring), null, Timeout.Infinite, executeOnlyOnce: false);
-        window.Start(hidden);
+        Listen(window);
+        window.Start(minimised);
+    }
+
+    private static void Reach()
+    {
+        if (!EventWaitHandle.TryOpenExisting(OpenSignal, out var signal))
+        {
+            MessageBox.Show("JagexManager is already running.", "JagexManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        using (signal)
+        {
+            AllowSetForegroundWindow(AnyProcess);
+            signal.Set();
+        }
+    }
+
+    private void Listen(MainWindow window)
+    {
+        try
+        {
+            opening = new EventWaitHandle(false, EventResetMode.AutoReset, OpenSignal);
+        }
+        catch (Exception error) when (error is WaitHandleCannotBeOpenedException or UnauthorizedAccessException or IOException)
+        {
+            return;
+        }
+
+        var waiting = ThreadPool.RegisterWaitForSingleObject(opening, (_, _) => Dispatcher.BeginInvoke(window.Restore), null, Timeout.Infinite, executeOnlyOnce: false);
+        window.Closed += (_, _) => waiting.Unregister(null);
     }
 
     private static void FollowContrast(object? sender, PropertyChangedEventArgs e)

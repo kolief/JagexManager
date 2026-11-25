@@ -35,8 +35,7 @@ public sealed record Settings
     public bool UseTray { get; init; }
 
     [JsonIgnore]
-    public IReadOnlyList<Program> Programs =>
-        Offered.Select(p => p with { Arguments = $"{p.Arguments} {Options.GetValueOrDefault(p.Name)}".Trim() }).ToList();
+    public IReadOnlyList<Program> Programs => Offered.Select(p => Launch(p, Options.GetValueOrDefault(p.Name))).ToList();
 
     [JsonIgnore]
     public IReadOnlyList<Program> Installed => Programs.Where(p => p.Installed).ToList();
@@ -46,22 +45,13 @@ public sealed record Settings
 
     private IEnumerable<Program> Offered => Program.Known.Concat(Custom);
 
-    public Program Find(string? name)
+    public Program Find(string? name, string? options = null)
     {
-        var programs = Programs;
-        return programs.FirstOrDefault(p => p.Name == name)
-            ?? programs.FirstOrDefault(p => p.Name == Default)
-            ?? programs[0];
-    }
-
-    public Program Find(string? name, string? options)
-    {
-        var program = Find(name);
-        if (options is null)
-            return program;
-
-        var plain = Offered.First(p => p.Name == program.Name);
-        return program with { Arguments = $"{plain.Arguments} {options}".Trim() };
+        var offered = Offered.ToList();
+        var program = offered.FirstOrDefault(p => p.Name == name)
+            ?? offered.FirstOrDefault(p => p.Name == Default)
+            ?? offered[0];
+        return Launch(program, options ?? Options.GetValueOrDefault(program.Name));
     }
 
     public bool Removable(string name) => Custom.Any(p => p.Name == name);
@@ -164,6 +154,9 @@ public sealed record Settings
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         File.WriteAllText(path, JsonSerializer.Serialize(this, Format));
     }
+
+    private static Program Launch(Program program, string? options) =>
+        program with { Arguments = $"{program.Arguments} {options}".Trim() };
 
     private string FreeName(string wanted)
     {

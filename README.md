@@ -13,12 +13,13 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
   password.
 - Play any character in RuneLite, the official Old School client, RuneScape 3,
   or any other client you add.
-- Run several characters at once, from one account or many, or start every
-  character on an account with one click.
+- Run several characters at once, from one account or many, or start all of an
+  account's shown characters with one click.
 - Choose a different client and launch options for each character, give
   characters your own names, and hide the ones you never play.
 - See whether each character is P2P, with the days of membership left, or F2P.
-  The days turn amber when membership is about to run out.
+  The days turn amber in the last three days of a membership that does not
+  renew.
 - Open the Jagex Launcher signed in to any of your accounts, or sign it out.
 - Use RuneLite's colours and the RuneScape font.
 
@@ -34,7 +35,9 @@ Windows 10 or 11 with RuneLite or the Jagex Launcher installed.
 3. To use a different client for a character, click the arrow next to Play and
    pick one. It is remembered for that character.
 4. Right-click a character, or use the same arrow, to rename it, give it its
-   own launch options (such as `--profile=Iron`), or hide it.
+   own launch options (such as `--profile=Iron`), or hide it. Launch options
+   belong to the client they were set for, and are cleared if you pick another
+   client for that character.
 5. To open the Jagex Launcher signed in to an account, click the
    **Open in the Jagex Launcher** icon on that account. If the launcher is
    already open, it is closed and reopened.
@@ -47,6 +50,10 @@ The **Settings** tab has the default client and its launch options (such as
 RuneLite's `--profile=Main`), the theme, the font, starting with Windows,
 minimising to the notification area, and a button to sign the Jagex Launcher
 out.
+
+Accounts are checked again when you come back to JagexManager after five
+minutes, and every hour while it is open, so new characters and membership days
+stay current.
 
 JagexManager asks GitHub for the latest release each time it starts and shows a
 notice when there is a newer one. It never downloads anything by itself. Turn

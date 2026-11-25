@@ -2,13 +2,26 @@ using System.Globalization;
 
 namespace JagexManager;
 
-public sealed class CharacterView(AccountView owner, Character character) : View
+public sealed class CharacterView : View
 {
-    private Character character = character;
+    private static readonly TimeSpan LapseWarning = TimeSpan.FromDays(3);
+
+    private Character character;
     private Client? client;
     private bool ready = true;
 
-    public AccountView Owner { get; } = owner;
+    public CharacterView(AccountView owner, Character character)
+    {
+        Owner = owner;
+        this.character = character;
+        owner.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AccountView.ShowHidden))
+                Raise(nameof(Visible));
+        };
+    }
+
+    public AccountView Owner { get; }
 
     public Character Character
     {
@@ -16,14 +29,19 @@ public sealed class CharacterView(AccountView owner, Character character) : View
         set
         {
             character = value;
-            Raise(nameof(Character), nameof(Name), nameof(Choice), nameof(Options), nameof(Detail), nameof(Hidden), nameof(Visible));
-            Recount();
+            Raise(nameof(Character), nameof(Name), nameof(Nickname), nameof(RealName), nameof(Choice), nameof(Options),
+                nameof(Detail), nameof(Hidden), nameof(Visible));
+            Tick();
         }
     }
 
-    public string Name => Preference.Nickname ?? RealName;
+    public string Name => Nickname ?? RealName;
 
-    public string? Choice => Owner.Account.Choices.GetValueOrDefault(character.Id);
+    public string? Nickname => Preference.Nickname;
+
+    public string RealName => character.Name.Length > 0 ? character.Name : "Unnamed character";
+
+    public string? Choice => Preference.Choice;
 
     public string? Options => Preference.Options;
 
@@ -35,15 +53,11 @@ public sealed class CharacterView(AccountView owner, Character character) : View
     {
         get
         {
-            string?[] parts = [Preference.Nickname is null ? null : RealName, Choice, Options];
+            string?[] parts = [Nickname is null ? null : RealName, Choice, Options];
             var shown = parts.OfType<string>().ToList();
             return shown.Count > 0 ? string.Join(" · ", shown) : null;
         }
     }
-
-    private string RealName => character.Name.Length > 0 ? character.Name : "Unnamed character";
-
-    private Preference Preference => Owner.Account.Preferences.GetValueOrDefault(character.Id) ?? Preference.None;
 
     public bool Member => character.Membership is { Active: true };
 
@@ -56,7 +70,8 @@ public sealed class CharacterView(AccountView owner, Character character) : View
 
     public string? MembershipLeft => character.Membership is { Active: true, Ends: { } ends } ? Left(ends) : null;
 
-    public bool Lapsing => character.Membership is { Active: true, Renews: false, Ends: { } ends } && ends - DateTimeOffset.UtcNow <= TimeSpan.FromDays(3);
+    public bool Lapsing =>
+        character.Membership is { Active: true, Renews: false, Ends: { } ends } && ends - DateTimeOffset.UtcNow <= LapseWarning;
 
     public string? MembershipNote => character.Membership switch
     {
@@ -74,9 +89,7 @@ public sealed class CharacterView(AccountView owner, Character character) : View
         set => Set(ref ready, value, nameof(Ready));
     }
 
-    public void Reveal() => Raise(nameof(Visible));
-
-    public void Recount() =>
+    public void Tick() =>
         Raise(nameof(Member), nameof(Membership), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing));
 
     public void Attach(Client started) => Set(ref client, started, nameof(Running), nameof(Visible));
@@ -94,6 +107,8 @@ public sealed class CharacterView(AccountView owner, Character character) : View
         client?.Dispose();
         Set(ref client, null, nameof(Running), nameof(Visible));
     }
+
+    private Preference Preference => Owner.Account.Preferences.GetValueOrDefault(character.Id, Preference.None);
 
     private static string Left(DateTimeOffset ends) =>
         (int)Math.Ceiling((ends - DateTimeOffset.UtcNow).TotalDays) is var days && days == 1 ? "1 day left" : $"{days} days left";

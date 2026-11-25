@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Controls;
@@ -15,20 +16,22 @@ using Microsoft.Win32;
 
 namespace JagexManager;
 
-[SuppressMessage("Reliability", "CA1001", Justification = "The tray icon is disposed when the window closes.")]
+[SuppressMessage("Design", "CA1001", Justification = "The tray icon is disposed when the window closes.")]
 public partial class MainWindow : Window
 {
+    private const int NicknameLimit = 32;
+    private const int OptionsLimit = 1000;
+
     private static readonly string SettingsPath = Path.Combine(App.DataFolder, "settings.json");
     private static readonly string FontPath = Path.Combine(App.DataFolder, "fonts", "runescape.ttf");
+    private static readonly TimeSpan Fresh = TimeSpan.FromMinutes(5);
+    private static readonly HttpClient Updates = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     private static readonly FontFamily Standard = new(new Uri("pack://application:,,,/Fonts/"), "./#Inter");
 
     private readonly Vault vault = new(Path.Combine(App.DataFolder, "vault.bin"));
     private readonly Jagex jagex = Jagex.Connect();
     private readonly Roster roster;
-    private static readonly TimeSpan Fresh = TimeSpan.FromMinutes(5);
-    private static readonly HttpClient Updates = new() { Timeout = TimeSpan.FromSeconds(10) };
-
     private readonly DispatcherTimer watch = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer freshen = new() { Interval = TimeSpan.FromHours(1) };
     private readonly bool fontOffered = GameFont.Available(GameFont.Repository);
@@ -36,8 +39,7 @@ public partial class MainWindow : Window
     private Settings settings;
     private bool gameFont;
     private bool launcherBusy;
-    private bool refreshing;
-    private DateTime refreshed = DateTime.MinValue;
+    private DateTimeOffset refreshed;
     private Release? update;
 
     private AccountView? dragged;
@@ -46,7 +48,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         roster = new Roster(vault, jagex);
-        tray = new Tray(Bring, Close);
+        tray = new Tray(this, Restore, Close);
         InitializeComponent();
 
         Title = $"JagexManager {typeof(App).Assembly.GetName().Version?.ToString(3)}";
@@ -62,34 +64,32 @@ public partial class MainWindow : Window
         freshen.Tick += async (_, _) => await RefreshAllAsync();
 
         Loaded += async (_, _) => await LoadAsync();
-        Activated += async (_, _) =>
-        {
-            if (DateTime.UtcNow - refreshed >= Fresh)
-                await RefreshAllAsync();
-        };
         StateChanged += (_, _) =>
         {
             if (WindowState == WindowState.Minimized)
-                Tuck();
+                HideToTray();
         };
     }
 
-    public void Start(bool hidden)
+    public void Start(bool minimised)
     {
-        if (hidden)
+        if (minimised)
         {
             WindowState = WindowState.Minimized;
             ShowActivated = false;
         }
 
         Show();
-        if (hidden)
-            Tuck();
+        if (minimised)
+            HideToTray();
     }
 
-    public void Bring()
+    public void Restore()
     {
-        tray.Visible = false;
+        if (!IsLoaded)
+            return;
+
+        tray.Hide();
         Show();
         if (WindowState == WindowState.Minimized)
             WindowState = WindowState.Normal;
@@ -97,13 +97,9 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    private void Tuck()
+    private void HideToTray()
     {
-        if (!settings.UseTray)
-            return;
-
-        tray.Visible = true;
-        if (tray.Visible)
+        if (settings.UseTray && tray.Show())
             Hide();
     }
 
@@ -126,6 +122,11 @@ public partial class MainWindow : Window
 
         freshen.Start();
         await RefreshAllAsync();
+        Activated += async (_, _) =>
+        {
+            if (DateTimeOffset.UtcNow - refreshed >= Fresh)
+                await RefreshAllAsync();
+        };
 
         if (settings.CheckUpdates)
             await CheckUpdateAsync();
@@ -152,21 +153,8 @@ public partial class MainWindow : Window
 
     private async Task RefreshAllAsync()
     {
-        if (refreshing)
-            return;
-
-        refreshing = true;
-        refreshed = DateTime.UtcNow;
-        try
-        {
-            await TryAsync(() => Task.WhenAll(roster.Accounts.ToList().Select(roster.RefreshAsync)));
-        }
-        finally
-        {
-            refreshing = false;
-            foreach (var account in roster.Accounts)
-                account.Recount();
-        }
+        refreshed = DateTimeOffset.UtcNow;
+        await TryAsync(roster.RefreshAllAsync);
     }
 
     private void Open()
@@ -353,7 +341,7 @@ public partial class MainWindow : Window
         moved |= roster.Move(account, above);
     }
 
-    private void LetGo(object sender, MouseButtonEventArgs e) => List.ReleaseMouseCapture();
+    private void EndDrag(object sender, MouseButtonEventArgs e) => List.ReleaseMouseCapture();
 
     private void Settle(object sender, MouseEventArgs e)
     {
@@ -411,31 +399,37 @@ public partial class MainWindow : Window
     private async void PlayAll(object sender, RoutedEventArgs e)
     {
         var account = (AccountView)((FrameworkElement)sender).DataContext;
-        var shown = account.Characters.Where(c => !c.Hidden).ToList();
-        var waiting = shown.Where(c => !c.Running && c.Ready).ToList();
-        if (waiting.Count == 0)
+        if (account.Playable.Count == 0)
         {
             Say(account.Characters.Count == 0 ? $"{account.Name} has no characters yet."
-                : shown.Count == 0 ? $"Every character on {account.Name} is hidden."
-                : $"Every character on {account.Name} is already running.");
+                : account.Characters.All(c => c.Hidden) ? $"Every character on {account.Name} is hidden."
+                : $"Every shown character on {account.Name} is already running or starting.");
             return;
         }
 
-        var started = 0;
-        foreach (var character in waiting)
-        {
-            if (!roster.Accounts.Contains(account) || account.Expired)
-                break;
-
-            if (await PlayAsync(character))
-                started++;
-        }
-
-        if (started == waiting.Count)
-            Say(started == 1 ? $"Started {waiting[0].Name}." : $"Started {started} characters on {account.Name}.");
+        IReadOnlyList<Outcome> outcomes = [];
+        await TryAsync(async () => outcomes = await roster.PlayAllAsync(account, c => settings.Find(c.Choice, c.Options)));
+        if (outcomes.Count > 0)
+            Say(Summary(account, outcomes));
     }
 
-    private void ToggleHidden(object sender, RoutedEventArgs e)
+    private static string Summary(AccountView account, IReadOnlyList<Outcome> outcomes)
+    {
+        var failed = outcomes.Where(o => o.Error is not null).ToList();
+        var started = outcomes.Count - failed.Count;
+        if (failed.Count == 0)
+        {
+            return started == 1
+                ? $"Started {outcomes[0].Character.Name} in {outcomes[0].Program.Name}."
+                : $"Started {started} characters on {account.Name}.";
+        }
+
+        var first = failed[0];
+        var reason = Explain(first.Error!) ?? "It could not be started.";
+        return $"Started {started} of {outcomes.Count} characters on {account.Name}. {first.Character.Name}: {reason}";
+    }
+
+    private void RevealHidden(object sender, RoutedEventArgs e)
     {
         var account = (AccountView)((FrameworkElement)sender).DataContext;
         account.ShowHidden = !account.ShowHidden;
@@ -446,18 +440,20 @@ public partial class MainWindow : Window
         var button = (Button)sender;
         var character = (CharacterView)button.DataContext;
         var installed = settings.Installed;
+        var menu = MenuBelow(button);
         if (installed.Count == 0)
         {
             Say("No game client was found. Choose one under Settings.");
-            return;
+        }
+        else
+        {
+            menu.Items.Add(ClientItem(character, null, $"Default ({settings.Default})"));
+            menu.Items.Add(new Separator());
+            foreach (var program in installed)
+                menu.Items.Add(ClientItem(character, program.Name, program.Name));
+            menu.Items.Add(new Separator());
         }
 
-        var menu = MenuBelow(button);
-        menu.Items.Add(ClientItem(character, null, $"Default ({settings.Default})"));
-        menu.Items.Add(new Separator());
-        foreach (var program in installed)
-            menu.Items.Add(ClientItem(character, program.Name, program.Name));
-        menu.Items.Add(new Separator());
         AddCharacterItems(menu, character);
 
         menu.IsOpen = true;
@@ -475,50 +471,42 @@ public partial class MainWindow : Window
 
     private void AddCharacterItems(ContextMenu menu, CharacterView character)
     {
-        menu.Items.Add(Item("_Rename…", () => Rename(character)));
-        menu.Items.Add(Item("_Launch options…", () => AskOptions(character)));
-        menu.Items.Add(Item(character.Hidden ? "_Show" : "_Hide", () => Hide(character)));
+        menu.Items.Add(Display.Item("_Rename…", () => Rename(character)));
+        menu.Items.Add(Display.Item("_Launch options…", () => AskOptions(character)));
+        menu.Items.Add(Display.Item(character.Hidden ? "_Show" : "_Hide", () => ToggleHidden(character)));
         menu.Items.Add(new Separator());
 
-        var copy = Item("_Copy session details", () => CopySession(character));
+        var copy = Display.Item("_Copy session details", () => CopySession(character));
         copy.IsEnabled = !character.Owner.Expired;
         menu.Items.Add(copy);
     }
 
-    private static MenuItem Item(string header, Action click)
-    {
-        var item = new MenuItem { Header = header };
-        item.Click += (_, _) => click();
-        return item;
-    }
-
     private void Rename(CharacterView character)
     {
-        var real = character.Character.Name;
-        var answer = Prompt.Ask(this, "Rename", $"Name to show for {(real.Length > 0 ? real : character.Name)}",
-            "Only shown in JagexManager. Leave it empty to show the character's own name.",
-            character.Name == real ? "" : character.Name, 32);
+        var answer = Prompt.Ask(this, title: "Rename", question: $"Name to show for {character.RealName}",
+            note: "Only shown in JagexManager. Leave it empty to show the character's own name.",
+            answer: character.Nickname ?? "", limit: NicknameLimit);
 
         if (answer is not null && Try(() => roster.Rename(character, answer)))
-            Say(answer.Trim().Length > 0 ? $"Renamed {real} to {character.Name}." : $"{character.Name} shows its own name again.");
+            Say(character.Nickname is { } nickname ? $"{character.RealName} is now shown as {nickname}." : $"{character.RealName} shows its own name again.");
     }
 
     private void AskOptions(CharacterView character)
     {
         var client = settings.Find(character.Choice).Name;
-        var answer = Prompt.Ask(this, "Launch options", $"Launch options for {character.Name}",
-            $"Used instead of the launch options in Settings, with whichever client this character plays ({client} now). Leave it empty to use the ones in Settings.",
-            character.Options ?? "", 1000);
+        var answer = Prompt.Ask(this, title: "Launch options", question: $"Launch options for {character.Name} in {client}",
+            note: "Replaces the launch options from Settings for this character. Leave it empty to use Settings.",
+            answer: character.Options ?? "", limit: OptionsLimit);
 
-        if (answer is not null && Try(() => roster.SetOptions(character, answer)))
-            Say(character.Options is { } options ? $"{character.Name} starts with {options}." : $"{character.Name} uses the launch options in Settings.");
+        if (answer is not null && Try(() => roster.SetOptions(character, answer, client)))
+            Say(character.Options is { } options ? $"{character.Name} starts {client} with {options}." : $"{character.Name} uses the launch options from Settings.");
     }
 
-    private void Hide(CharacterView character)
+    private void ToggleHidden(CharacterView character)
     {
         var hidden = !character.Hidden;
-        if (Try(() => roster.Hide(character, hidden)))
-            Say(hidden ? $"Hid {character.Name}. Show hidden characters at the bottom of {character.Owner.Name} brings it back." : $"{character.Name} is shown again.");
+        if (Try(() => roster.SetHidden(character, hidden)))
+            Say(hidden ? $"Hid {character.Name}. Use the link under {character.Owner.Name} to show it again." : $"{character.Name} is shown again.");
     }
 
     private void CopySession(CharacterView character)
@@ -543,15 +531,8 @@ public partial class MainWindow : Window
 
     private ContextMenu MenuBelow(UIElement target)
     {
-        var menu = new ContextMenu
-        {
-            PlacementTarget = target,
-            Placement = PlacementMode.Bottom,
-            FontFamily = FontFamily,
-            FontSize = FontSize,
-        };
-        TextOptions.SetTextFormattingMode(menu, TextOptions.GetTextFormattingMode(this));
-        TextOptions.SetTextRenderingMode(menu, TextOptions.GetTextRenderingMode(this));
+        var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.Bottom };
+        Display.Match(menu, this);
         return menu;
     }
 
@@ -778,7 +759,7 @@ public partial class MainWindow : Window
 
     private static string? Explain(Exception e) => e switch
     {
-        PlayException or IOException or InvalidDataException or UnauthorizedAccessException or Win32Exception => e.Message,
+        PlayException or IOException or InvalidDataException or UnauthorizedAccessException or Win32Exception or SecurityException => e.Message,
         _ => null,
     };
 

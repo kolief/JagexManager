@@ -9,9 +9,9 @@ namespace JagexManager;
 public sealed partial record Release(Version Version, Uri Page)
 {
     private const string LatestUrl = "https://api.github.com/repos/kolief/JagexManager/releases/latest";
-    private const string Pages = "https://github.com/kolief/JagexManager/releases/";
+    private const string Pages = "/kolief/JagexManager/releases/";
 
-    public static async Task<Release?> FindNewerAsync(HttpClient http, Version current, CancellationToken cancel = default)
+    public static async Task<Release?> FindNewerAsync(HttpClient http, Version current)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestUrl);
         request.Headers.UserAgent.ParseAdd("JagexManager");
@@ -19,15 +19,14 @@ public sealed partial record Release(Version Version, Uri Page)
 
         try
         {
-            using var response = await http.SendAsync(request, cancel);
+            using var response = await http.SendAsync(request);
             if (!response.IsSuccessStatusCode)
                 return null;
 
-            var latest = await response.Content.ReadFromJsonAsync<Latest>(cancel);
+            var latest = await response.Content.ReadFromJsonAsync<Latest>();
             return Read(latest?.Tag, latest?.Page) is { } release && release.Version > Plain(current) ? release : null;
         }
-        catch (Exception e) when (e is HttpRequestException or JsonException or NotSupportedException
-            || (e is OperationCanceledException && !cancel.IsCancellationRequested))
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException)
         {
             return null;
         }
@@ -38,16 +37,19 @@ public sealed partial record Release(Version Version, Uri Page)
         if (tag is null || Tag().Match(tag) is not { Success: true } match)
             return null;
 
-        if (page is null || !page.StartsWith(Pages, StringComparison.Ordinal) || !Uri.TryCreate(page, UriKind.Absolute, out var uri))
+        if (!Uri.TryCreate(page, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || uri.Host != "github.com"
+            || !uri.AbsolutePath.StartsWith(Pages, StringComparison.Ordinal))
             return null;
 
-        var parts = match.Groups.Values.Skip(1).Select(g => int.TryParse(g.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1).ToArray();
-        return parts.All(n => n >= 0) ? new Release(new Version(parts[0], parts[1], parts[2]), uri) : null;
+        int Part(int group) => int.Parse(match.Groups[group].Value, CultureInfo.InvariantCulture);
+        return new Release(new Version(Part(1), Part(2), Part(3)), uri);
     }
 
     private static Version Plain(Version version) => new(version.Major, version.Minor, Math.Max(version.Build, 0));
 
-    [GeneratedRegex(@"^v(\d{1,6})\.(\d{1,6})\.(\d{1,6})$")]
+    [GeneratedRegex("^v([0-9]{1,6})\\.([0-9]{1,6})\\.([0-9]{1,6})$")]
     private static partial Regex Tag();
 
     private sealed record Latest(

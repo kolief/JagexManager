@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 
 namespace JagexManager;
 
 public sealed class PlayException(string message) : Exception(message);
+
+public sealed record Outcome(CharacterView Character, Program Program, Exception? Error);
 
 public enum Handover
 {
@@ -13,6 +16,8 @@ public enum Handover
 
 public sealed class Roster(Vault vault, Jagex jagex)
 {
+    private bool refreshing;
+
     public ObservableCollection<AccountView> Accounts { get; } = [];
 
     private IEnumerable<CharacterView> Characters => Accounts.SelectMany(a => a.Characters);
@@ -27,11 +32,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
     {
         if (Accounts.FirstOrDefault(a => a.Account.Id == account.Id) is { } known)
         {
-            known.Update(account with
-            {
-                Choices = Kept(known.Account.Choices, account.Characters),
-                Preferences = Kept(known.Account.Preferences, account.Characters),
-            });
+            known.Update(account with { Preferences = Kept(known.Account.Preferences, account.Characters) });
             known.Expired = false;
         }
         else
@@ -80,12 +81,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
             account.Expired = false;
             if (!characters.SequenceEqual(account.Account.Characters))
             {
-                account.Update(account.Account with
-                {
-                    Characters = characters,
-                    Choices = Kept(account.Account.Choices, characters),
-                    Preferences = Kept(account.Account.Preferences, characters),
-                });
+                account.Update(account.Account with { Characters = characters });
                 Save();
             }
 
@@ -105,37 +101,49 @@ public sealed class Roster(Vault vault, Jagex jagex)
         }
     }
 
-    public void Choose(CharacterView character, string? name)
+    public async Task RefreshAllAsync()
     {
-        var account = character.Owner;
-        if (!account.Characters.Contains(character))
+        if (refreshing)
             return;
 
-        var choices = account.Account.Choices.Where(c => c.Key != character.Character.Id).ToDictionary();
-        if (name is not null)
-            choices[character.Character.Id] = name;
-
-        account.Update(account.Account with { Choices = choices });
-        Save();
+        refreshing = true;
+        try
+        {
+            await Task.WhenAll(Accounts.ToList().Select(RefreshAsync));
+        }
+        finally
+        {
+            refreshing = false;
+            foreach (var account in Accounts)
+                account.Tick();
+        }
     }
 
+    public void Choose(CharacterView character, string? name) =>
+        Prefer(character, p => p.Choice == name ? p : p with { Choice = name, Options = null });
+
     public void Rename(CharacterView character, string? nickname) =>
-        Prefer(character, p => p with { Nickname = Typed(nickname) });
+        Prefer(character, p => p with { Nickname = Preference.Clean(nickname) == character.Character.Name ? null : nickname });
 
-    public void SetOptions(CharacterView character, string? options) =>
-        Prefer(character, p => p with { Options = Typed(options) });
+    public void SetOptions(CharacterView character, string? options, string client) =>
+        Prefer(character, p => Preference.Clean(options) is null ? p with { Options = null } : p with { Choice = client, Options = options });
 
-    public void Hide(CharacterView character, bool hidden) =>
+    public void SetHidden(CharacterView character, bool hidden) =>
         Prefer(character, p => p with { Hidden = hidden });
 
     public void Prune(IEnumerable<string> names)
     {
         var offered = names.ToHashSet();
-        var stale = Accounts.Where(a => a.Account.Choices.Values.Any(name => !offered.Contains(name))).ToList();
+        bool Stale(Preference p) => p.Choice is { } choice && !offered.Contains(choice);
+
+        var stale = Accounts.Where(a => a.Account.Preferences.Values.Any(Stale)).ToList();
         foreach (var account in stale)
         {
-            var choices = account.Account.Choices.Where(c => offered.Contains(c.Value)).ToDictionary();
-            account.Update(account.Account with { Choices = choices });
+            var preferences = account.Account.Preferences
+                .Select(p => (p.Key, Value: Stale(p.Value) ? p.Value with { Choice = null, Options = null } : p.Value))
+                .Where(p => p.Value != Preference.None)
+                .ToDictionary(p => p.Key, p => p.Value);
+            account.Update(account.Account with { Preferences = preferences });
         }
 
         if (stale.Count > 0)
@@ -198,14 +206,49 @@ public sealed class Roster(Vault vault, Jagex jagex)
         var account = character.Owner;
         await RefreshAsync(account);
 
-        if (!Accounts.Contains(account) || !account.Characters.Contains(character))
+        if (!Accounts.Contains(account))
             throw new PlayException($"{character.Name} is no longer on this account.");
 
-        if (account.Expired)
-            throw new PlayException($"Jagex ended the session for {account.Name}. Sign in again to play.");
+        Usable(account);
+        Start(character, program);
+    }
 
-        if (!character.Running)
-            character.Attach(Client.Start(program.Path, program.Arguments, account.Account.SessionId, character.Character));
+    public async Task<IReadOnlyList<Outcome>> PlayAllAsync(AccountView account, Func<CharacterView, Program> pick)
+    {
+        var waiting = account.Playable;
+        foreach (var character in waiting)
+            character.Ready = false;
+
+        try
+        {
+            await RefreshAsync(account);
+            if (!Accounts.Contains(account))
+                throw new PlayException($"{account.Name} is no longer in JagexManager.");
+
+            Usable(account);
+
+            var outcomes = new List<Outcome>();
+            foreach (var character in waiting)
+            {
+                var program = pick(character);
+                try
+                {
+                    Start(character, program);
+                    outcomes.Add(new Outcome(character, program, null));
+                }
+                catch (Exception e) when (e is PlayException or IOException or UnauthorizedAccessException or Win32Exception)
+                {
+                    outcomes.Add(new Outcome(character, program, e));
+                }
+            }
+
+            return outcomes;
+        }
+        finally
+        {
+            foreach (var character in waiting)
+                character.Ready = true;
+        }
     }
 
     public void DropClosed()
@@ -246,6 +289,27 @@ public sealed class Roster(Vault vault, Jagex jagex)
         Save();
     }
 
+    private static void Usable(AccountView account)
+    {
+        if (account.Expired)
+            throw new PlayException($"Jagex ended the session for {account.Name}. Sign in again to play.");
+    }
+
+    private static void Start(CharacterView character, Program program)
+    {
+        var account = character.Owner;
+        if (!account.Characters.Contains(character))
+            throw new PlayException($"{character.Name} is no longer on this account.");
+
+        if (character.Running)
+            return;
+
+        if (!program.Installed)
+            throw new PlayException($"{program.Name} was not found. Choose another client.");
+
+        character.Attach(Client.Start(program.Path, program.Arguments, account.Account.SessionId, character.Character));
+    }
+
     private void Prefer(CharacterView character, Func<Preference, Preference> change)
     {
         var account = character.Owner;
@@ -254,7 +318,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
 
         var id = character.Character.Id;
         var preferences = account.Account.Preferences.Where(p => p.Key != id).ToDictionary();
-        var changed = change(account.Account.Preferences.GetValueOrDefault(id) ?? Preference.None);
+        var changed = change(account.Account.Preferences.GetValueOrDefault(id, Preference.None)).Tidy();
         if (changed != Preference.None)
             preferences[id] = changed;
 
@@ -262,12 +326,10 @@ public sealed class Roster(Vault vault, Jagex jagex)
         Save();
     }
 
-    private static string? Typed(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
-
     private static bool Unreachable(Exception e) =>
         e is JagexException or HttpRequestException or TaskCanceledException;
 
     private static Dictionary<string, T> Kept<T>(
-        IReadOnlyDictionary<string, T> kept, IReadOnlyList<Character> characters) =>
-        kept.Where(entry => characters.Any(c => c.Id == entry.Key)).ToDictionary();
+        IReadOnlyDictionary<string, T> entries, IReadOnlyList<Character> characters) =>
+        entries.Where(entry => characters.Any(c => c.Id == entry.Key)).ToDictionary();
 }

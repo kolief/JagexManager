@@ -170,7 +170,7 @@
                 <Button DockPanel.Dock="Right" Click="DismissUpdate" Margin="12,0,0,0" Style="{StaticResource Link}"
                         Content="Not now" VerticalAlignment="Center" />
                 <Button DockPanel.Dock="Right" Click="OpenUpdate" Margin="12,0,0,0" Style="{StaticResource Link}"
-                        Content="Download" VerticalAlignment="Center" />
+                        Content="View release" VerticalAlignment="Center" />
                 <TextBlock x:Name="UpdateText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                            AutomationProperties.LiveSetting="Polite" />
             </DockPanel>
@@ -200,7 +200,7 @@
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,0">
                     <ItemsControl x:Name="List" IsTabStop="False"
-                                  MouseMove="Drag" MouseLeftButtonUp="LetGo" LostMouseCapture="Settle">
+                                  MouseMove="Drag" MouseLeftButtonUp="EndDrag" LostMouseCapture="Settle">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type core:AccountView}">
                                 <Border Style="{StaticResource Card}">
@@ -225,8 +225,8 @@
                                                 </Button>
                                             </ContentControl>
                                             <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Click="PlayAll" Margin="8,0,0,0"
-                                                    VerticalAlignment="Center" ToolTip="Play every character"
-                                                    AutomationProperties.Name="{Binding Name, StringFormat=Play every character on {0}}"
+                                                    VerticalAlignment="Center" ToolTip="Play all shown characters"
+                                                    AutomationProperties.Name="{Binding Name, StringFormat=Play all shown characters on {0}}"
                                                     Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
                                                 <TextBlock Text="&#xE768;" Style="{StaticResource Icon}" FontSize="14" />
                                             </Button>
@@ -358,7 +358,7 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <Button Click="ToggleHidden" Content="{Binding HiddenNote}" HorizontalAlignment="Left"
+                                            <Button Click="RevealHidden" Content="{Binding HiddenLink}" HorizontalAlignment="Left"
                                                     Style="{StaticResource Link}" FontSize="12" />
                                         </Border>
                                     </StackPanel>

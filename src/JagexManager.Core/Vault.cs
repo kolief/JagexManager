@@ -20,14 +20,14 @@ public sealed class Vault(string path)
         {
             var json = ProtectedData.Unprotect(data, Entropy, DataProtectionScope.CurrentUser);
             var accounts = JsonSerializer.Deserialize<List<Account>>(json);
+            var earlier = JsonSerializer.Deserialize<List<Earlier?>>(json);
 
-            if (accounts is null || !accounts.All(Complete))
+            if (accounts is null || earlier is null || !accounts.All(Complete))
                 throw Damaged();
 
-            return accounts.Select(a => a with
+            return accounts.Select((a, i) => a with
             {
-                Choices = Chosen(a.Choices),
-                Preferences = Preferred(a.Preferences),
+                Preferences = Preferred(a.Preferences, earlier[i]?.Choices),
                 Credentials = a.Credentials is { Complete: true } ? a.Credentials : null,
             }).ToList();
         }
@@ -54,13 +54,26 @@ public sealed class Vault(string path)
         account is { Id: not null, Name: not null, SessionId: not null, Characters: not null }
         && account.Characters.All(c => c is { Id: not null, Name: not null });
 
-    private static Dictionary<string, string> Chosen(IReadOnlyDictionary<string, string>? choices) =>
-        (choices ?? FrozenDictionary<string, string>.Empty).Where(c => c.Value is not null).ToDictionary();
+    private static Dictionary<string, Preference> Preferred(IReadOnlyDictionary<string, Preference>? saved, JsonElement? choices)
+    {
+        var preferences = (saved ?? FrozenDictionary<string, Preference>.Empty)
+            .Where(p => p.Value is not null)
+            .ToDictionary(p => p.Key, p => p.Value.Tidy());
 
-    private static Dictionary<string, Preference> Preferred(IReadOnlyDictionary<string, Preference>? preferences) =>
-        (preferences ?? FrozenDictionary<string, Preference>.Empty)
-            .Where(p => p.Value is not null && p.Value != Preference.None)
-            .ToDictionary();
+        if (choices is { ValueKind: JsonValueKind.Object } chosen)
+        {
+            foreach (var choice in chosen.EnumerateObject())
+            {
+                var preference = preferences.GetValueOrDefault(choice.Name, Preference.None);
+                if (preference.Choice is null && choice.Value.ValueKind == JsonValueKind.String)
+                    preferences[choice.Name] = preference with { Choice = Preference.Clean(choice.Value.GetString()) };
+            }
+        }
+
+        return preferences.Where(p => p.Value != Preference.None).ToDictionary();
+    }
 
     private static InvalidDataException Damaged() => new("The saved accounts could not be read.");
+
+    private sealed record Earlier(JsonElement? Choices);
 }

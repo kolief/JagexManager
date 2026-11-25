@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
@@ -11,6 +12,7 @@ public sealed class Tray : IDisposable
     private const int LeftUp = 0x0202;
     private const int RightUp = 0x0205;
     private const int Add = 0;
+    private const int Modify = 1;
     private const int Delete = 2;
     private const int MessageFlag = 1;
     private const int IconFlag = 2;
@@ -19,14 +21,16 @@ public sealed class Tray : IDisposable
     private static readonly int TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
     private readonly HwndSource window = new(new HwndSourceParameters("JagexManager tray") { Width = 0, Height = 0, WindowStyle = 0 });
-    private readonly nint icon;
+    private readonly Window owner;
     private readonly Action open;
     private readonly Action exit;
+    private readonly nint icon;
     private bool wanted;
     private bool shown;
 
-    public Tray(Action open, Action exit)
+    public Tray(Window owner, Action open, Action exit)
     {
+        this.owner = owner;
         this.open = open;
         this.exit = exit;
         window.AddHook(Listen);
@@ -36,22 +40,25 @@ public sealed class Tray : IDisposable
             icon = small;
     }
 
-    public bool Visible
+    public bool Show()
     {
-        get => shown;
-        set
-        {
-            wanted = value;
-            if (value && !shown)
-                shown = Notify(Add);
-            else if (!value && shown)
-                shown = !Notify(Delete);
-        }
+        wanted = true;
+        if (!shown)
+            shown = Notify(Add) || Notify(Modify);
+
+        return shown;
+    }
+
+    public void Hide()
+    {
+        wanted = false;
+        _ = Notify(Delete);
+        shown = false;
     }
 
     public void Dispose()
     {
-        Visible = false;
+        Hide();
         window.Dispose();
         if (icon != 0)
             _ = DestroyIcon(icon);
@@ -75,7 +82,8 @@ public sealed class Tray : IDisposable
     {
         if (message == TaskbarCreated && wanted)
         {
-            shown = Notify(Add);
+            shown = false;
+            _ = Show();
         }
         else if (message == Callback && (int)lParam == LeftUp)
         {
@@ -83,7 +91,6 @@ public sealed class Tray : IDisposable
         }
         else if (message == Callback && (int)lParam == RightUp)
         {
-            _ = SetForegroundWindow(window.Handle);
             Offer();
         }
 
@@ -93,16 +100,13 @@ public sealed class Tray : IDisposable
     private void Offer()
     {
         var menu = new ContextMenu { Placement = PlacementMode.MousePoint };
-        menu.Items.Add(Item("_Open JagexManager", open));
-        menu.Items.Add(Item("E_xit", exit));
+        Display.Match(menu, owner);
+        menu.Items.Add(Display.Item("_Open JagexManager", open));
+        menu.Items.Add(Display.Item("E_xit", exit));
         menu.IsOpen = true;
-    }
 
-    private static MenuItem Item(string header, Action click)
-    {
-        var item = new MenuItem { Header = header };
-        item.Click += (_, _) => click();
-        return item;
+        if (PresentationSource.FromVisual(menu) is HwndSource popup)
+            _ = SetForegroundWindow(popup.Handle);
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
