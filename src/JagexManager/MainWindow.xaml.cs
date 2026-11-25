@@ -243,7 +243,7 @@ public partial class MainWindow : Window
 
         var answer = MessageBox.Show(this,
             $"Remove {account.Name} from JagexManager?\n\nRunning clients stay open. To end the session everywhere, use \"End sessions\" in your Jagex account settings.",
-            "Remove account", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            "Remove account", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
         if (answer != MessageBoxResult.OK)
             return;
 
@@ -360,7 +360,7 @@ public partial class MainWindow : Window
     private bool ConfirmReplace() =>
         MessageBox.Show(this,
             "The Jagex Launcher is signed in to an account that is not in JagexManager. Sign it out and continue?",
-            "Jagex Launcher", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK;
+            "Jagex Launcher", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK;
 
     private void Grab(object sender, MouseButtonEventArgs e)
     {
