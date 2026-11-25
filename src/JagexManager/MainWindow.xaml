@@ -237,13 +237,13 @@
                                             <DataTemplate DataType="{x:Type core:Group}">
                                                 <Border Style="{StaticResource Row}" MouseRightButtonUp="OfferGroup">
                                                     <DockPanel>
-                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                                             <Button Padding="{StaticResource ButtonPadding}" MinWidth="64" Click="PlayGroup"
                                                                     Content="Play" Tag="&#xE768;" ContentTemplate="{StaticResource IconLabel}"
                                                                     Style="{DynamicResource AccentButtonStyle}"
                                                                     AutomationProperties.Name="{Binding Name, StringFormat=Play group {0}}" />
-                                                            <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferGroupOptions" VerticalAlignment="Stretch"
-                                                                    ToolTip="Group options"
+                                                            <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferGroupOptions"
+                                                                    VerticalAlignment="Stretch" ToolTip="Group options"
                                                                     AutomationProperties.Name="{Binding Name, StringFormat=Options for {0}}">
                                                                 <TextBlock Text="&#xE70D;" Style="{StaticResource Icon}" />
                                                             </Button>
@@ -284,36 +284,38 @@
                                                            PreviewMouseLeftButtonDown="Grab" KeyDown="Nudge"
                                                            ToolTip="Drag, or press Up or Down, to reorder"
                                                            AutomationProperties.Name="{Binding Name, StringFormat=Reorder {0}}" />
-                                                    <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Click="Remove" Margin="8,0,0,0"
-                                                            VerticalAlignment="Center" ToolTip="Remove account"
-                                                            AutomationProperties.Name="{Binding Name, StringFormat=Remove {0}}">
-                                                        <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="14" />
-                                                    </Button>
-                                                    <ContentControl DockPanel.Dock="Right" Focusable="False" VerticalAlignment="Center"
-                                                                    Visibility="{Binding Source={x:Static core:Launcher.Installed}, Converter={StaticResource Visible}}">
-                                                        <Button Padding="{StaticResource ButtonPadding}" Click="OpenLauncher" Margin="8,0,0,0"
-                                                                ToolTip="Open in the Jagex Launcher"
-                                                                AutomationProperties.Name="{Binding Name, StringFormat=Open {0} in the Jagex Launcher}"
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Padding="{StaticResource ButtonPadding}" Content="Sign in again" Click="SignIn" Margin="8,0,0,0"
+                                                                Style="{DynamicResource AccentButtonStyle}"
+                                                                AutomationProperties.Name="{Binding Name, StringFormat=Sign in again for {0}}"
+                                                                Visibility="{Binding Expired, Converter={StaticResource Visible}}" />
+                                                        <Button Padding="{StaticResource ButtonPadding}" Click="Refresh" Margin="8,0,0,0"
+                                                                VerticalAlignment="Stretch" ToolTip="Check for new characters"
+                                                                AutomationProperties.Name="{Binding Name, StringFormat=Check {0} for new characters}"
                                                                 Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
-                                                            <TextBlock Text="&#xE8A7;" Style="{StaticResource Icon}" FontSize="14" />
+                                                            <TextBlock Text="&#xE72C;" Style="{StaticResource Icon}" FontSize="14" />
                                                         </Button>
-                                                    </ContentControl>
-                                                    <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Click="PlayAll" Margin="8,0,0,0"
-                                                            VerticalAlignment="Center" ToolTip="Play all shown characters"
-                                                            AutomationProperties.Name="{Binding Name, StringFormat=Play all shown characters on {0}}"
-                                                            Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
-                                                        <TextBlock Text="&#xE768;" Style="{StaticResource Icon}" FontSize="14" />
-                                                    </Button>
-                                                    <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Click="Refresh" Margin="8,0,0,0"
-                                                            VerticalAlignment="Center" ToolTip="Check for new characters"
-                                                            AutomationProperties.Name="{Binding Name, StringFormat=Check {0} for new characters}"
-                                                            Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
-                                                        <TextBlock Text="&#xE72C;" Style="{StaticResource Icon}" FontSize="14" />
-                                                    </Button>
-                                                    <Button Padding="{StaticResource ButtonPadding}" DockPanel.Dock="Right" Content="Sign in again" Click="SignIn" Margin="8,0,0,0"
-                                                            VerticalAlignment="Center" Style="{DynamicResource AccentButtonStyle}"
-                                                            AutomationProperties.Name="{Binding Name, StringFormat=Sign in again for {0}}"
-                                                            Visibility="{Binding Expired, Converter={StaticResource Visible}}" />
+                                                        <Button Padding="{StaticResource ButtonPadding}" Click="PlayAll" Margin="8,0,0,0"
+                                                                VerticalAlignment="Stretch" ToolTip="Play all shown characters"
+                                                                AutomationProperties.Name="{Binding Name, StringFormat=Play all shown characters on {0}}"
+                                                                Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
+                                                            <TextBlock Text="&#xE768;" Style="{StaticResource Icon}" FontSize="14" />
+                                                        </Button>
+                                                        <ContentControl Focusable="False"
+                                                                        Visibility="{Binding Source={x:Static core:Launcher.Installed}, Converter={StaticResource Visible}}">
+                                                            <Button Padding="{StaticResource ButtonPadding}" Click="OpenLauncher" Margin="8,0,0,0"
+                                                                    VerticalAlignment="Stretch" ToolTip="Open in the Jagex Launcher"
+                                                                    AutomationProperties.Name="{Binding Name, StringFormat=Open {0} in the Jagex Launcher}"
+                                                                    Visibility="{Binding Expired, Converter={StaticResource Collapsed}}">
+                                                                <TextBlock Text="&#xE8A7;" Style="{StaticResource Icon}" FontSize="14" />
+                                                            </Button>
+                                                        </ContentControl>
+                                                        <Button Padding="{StaticResource ButtonPadding}" Click="Remove" Margin="8,0,0,0"
+                                                                VerticalAlignment="Stretch" ToolTip="Remove account"
+                                                                AutomationProperties.Name="{Binding Name, StringFormat=Remove {0}}">
+                                                            <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="14" />
+                                                        </Button>
+                                                    </StackPanel>
                                                     <StackPanel VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="{DynamicResource Strong}"
                                                                    TextTrimming="CharacterEllipsis" />
@@ -342,14 +344,14 @@
                                                                     </Style>
                                                                 </Border.Style>
                                                                 <DockPanel>
-                                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                                                         <Button Padding="{StaticResource ButtonPadding}" MinWidth="64" Click="Play"
                                                                                 Content="Play" Tag="&#xE768;" ContentTemplate="{StaticResource IconLabel}"
                                                                                 IsEnabled="{Binding Ready}" Style="{DynamicResource AccentButtonStyle}"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Play {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Collapsed}}" />
-                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="0,0,4,0" Click="FocusClient" VerticalAlignment="Stretch"
-                                                                                ToolTip="Show the game window"
+                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="0,0,4,0" Click="FocusClient"
+                                                                                VerticalAlignment="Stretch" ToolTip="Show the game window"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Show the game window for {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Visible}}">
                                                                             <TextBlock Text="&#xE7C4;" Style="{StaticResource Icon}" />
@@ -358,8 +360,8 @@
                                                                                 Content="Stop" Tag="&#xE71A;" ContentTemplate="{StaticResource IconLabel}"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Stop {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Visible}}" />
-                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferClients" VerticalAlignment="Stretch"
-                                                                                ToolTip="Choose a client" IsEnabled="{Binding Ready}"
+                                                                        <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferClients"
+                                                                                VerticalAlignment="Stretch" ToolTip="Choose a client" IsEnabled="{Binding Ready}"
                                                                                 AutomationProperties.Name="{Binding Name, StringFormat=Choose a client for {0}}"
                                                                                 Visibility="{Binding Running, Converter={StaticResource Collapsed}}">
                                                                             <TextBlock Text="&#xE70D;" Style="{StaticResource Icon}" />
