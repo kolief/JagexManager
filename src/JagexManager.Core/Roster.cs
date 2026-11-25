@@ -17,15 +17,47 @@ public enum Handover
 public sealed class Roster(Vault vault, Jagex jagex)
 {
     private bool refreshing;
+    private bool byPlayed;
+    private string? filter;
 
     public ObservableCollection<AccountView> Accounts { get; } = [];
+
+    public ObservableCollection<Group> Groups { get; } = [];
+
+    public bool ByPlayed
+    {
+        get => byPlayed;
+        set
+        {
+            byPlayed = value;
+            foreach (var account in Accounts)
+                account.ByPlayed = value;
+
+            Regroup();
+        }
+    }
+
+    public string? Filter
+    {
+        get => filter;
+        set
+        {
+            filter = Preference.Clean(value);
+            foreach (var account in Accounts)
+                account.Filter = filter;
+        }
+    }
+
+    public bool Found => filter is null || Accounts.Any(a => a.Shown);
 
     private IEnumerable<CharacterView> Characters => Accounts.SelectMany(a => a.Characters);
 
     public void Load()
     {
         foreach (var account in vault.Load())
-            Accounts.Add(new AccountView(account));
+            Accounts.Add(View(account));
+
+        Regroup();
     }
 
     public void Add(Account account)
@@ -37,7 +69,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
         }
         else
         {
-            Accounts.Add(new AccountView(account));
+            Accounts.Add(View(account));
         }
 
         Save();
@@ -131,6 +163,18 @@ public sealed class Roster(Vault vault, Jagex jagex)
     public void SetHidden(CharacterView character, bool hidden) =>
         Prefer(character, p => p with { Hidden = hidden });
 
+    public void Join(CharacterView character, string group) =>
+        Prefer(character, p => p with { Groups = [.. p.Groups, group] });
+
+    public void Leave(CharacterView character, string group) =>
+        Prefer(character, p => p with { Groups = Without(p.Groups, group) });
+
+    public void RenameGroup(string group, string name) =>
+        Prefer(Members(group), p => p with { Groups = [.. Without(p.Groups, group), name] });
+
+    public void Ungroup(string group) =>
+        Prefer(Members(group), p => p with { Groups = Without(p.Groups, group) });
+
     public void Prune(IEnumerable<string> names)
     {
         var offered = names.ToHashSet();
@@ -210,30 +254,36 @@ public sealed class Roster(Vault vault, Jagex jagex)
             throw new PlayException($"{character.Name} is no longer on this account.");
 
         Usable(account);
-        Start(character, program);
+        if (Start(character, program))
+            Stamp([character]);
     }
 
-    public async Task<IReadOnlyList<Outcome>> PlayAllAsync(AccountView account, Func<CharacterView, Program> pick)
+    public async Task<IReadOnlyList<Outcome>> PlayAllAsync(IReadOnlyList<CharacterView> waiting, Func<CharacterView, Program> pick, TimeSpan gap)
     {
-        var waiting = account.Playable;
         foreach (var character in waiting)
             character.Ready = false;
 
         try
         {
-            await RefreshAsync(account);
-            if (!Accounts.Contains(account))
-                throw new PlayException($"{account.Name} is no longer in JagexManager.");
-
-            Usable(account);
+            await Task.WhenAll(waiting.Select(c => c.Owner).Distinct().Select(RefreshAsync));
 
             var outcomes = new List<Outcome>();
+            var started = new List<CharacterView>();
             foreach (var character in waiting)
             {
                 var program = pick(character);
                 try
                 {
-                    Start(character, program);
+                    if (started.Count > 0 && gap > TimeSpan.Zero && !character.Running)
+                        await Task.Delay(gap);
+
+                    if (!Accounts.Contains(character.Owner))
+                        throw new PlayException($"{character.Owner.Name} is no longer in JagexManager.");
+
+                    Usable(character.Owner);
+                    if (Start(character, program))
+                        started.Add(character);
+
                     outcomes.Add(new Outcome(character, program, null));
                 }
                 catch (Exception e) when (e is PlayException or IOException or UnauthorizedAccessException or Win32Exception)
@@ -242,6 +292,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
                 }
             }
 
+            Stamp(started);
             return outcomes;
         }
         finally
@@ -263,7 +314,11 @@ public sealed class Roster(Vault vault, Jagex jagex)
             character.Forget();
     }
 
-    public void Save() => vault.Save(Accounts.Select(a => a.Account));
+    public void Save()
+    {
+        Regroup();
+        vault.Save(Accounts.Select(a => a.Account));
+    }
 
     public void SignOut(Launcher launcher)
     {
@@ -295,36 +350,82 @@ public sealed class Roster(Vault vault, Jagex jagex)
             throw new PlayException($"Jagex ended the session for {account.Name}. Sign in again to play.");
     }
 
-    private static void Start(CharacterView character, Program program)
+    private static bool Start(CharacterView character, Program program)
     {
         var account = character.Owner;
         if (!account.Characters.Contains(character))
             throw new PlayException($"{character.Name} is no longer on this account.");
 
         if (character.Running)
-            return;
+            return false;
 
         if (!program.Installed)
             throw new PlayException($"{program.Name} was not found. Choose another client.");
 
         character.Attach(Client.Start(program.Path, program.Arguments, account.Account.SessionId, character.Character));
+        return true;
     }
 
-    private void Prefer(CharacterView character, Func<Preference, Preference> change)
+    private void Stamp(IReadOnlyList<CharacterView> started)
     {
-        var account = character.Owner;
-        if (!account.Characters.Contains(character))
+        var now = DateTimeOffset.UtcNow;
+        Prefer(started, p => p with { Played = now });
+    }
+
+    private void Prefer(CharacterView character, Func<Preference, Preference> change) => Prefer([character], change);
+
+    private void Prefer(IEnumerable<CharacterView> characters, Func<Preference, Preference> change)
+    {
+        var changed = false;
+        foreach (var members in characters.GroupBy(c => c.Owner))
+        {
+            var account = members.Key;
+            var kept = members.Where(account.Characters.Contains).ToList();
+            if (!Accounts.Contains(account) || kept.Count == 0)
+                continue;
+
+            var preferences = account.Account.Preferences.ToDictionary();
+            foreach (var character in kept)
+            {
+                var id = character.Character.Id;
+                var preference = change(preferences.GetValueOrDefault(id, Preference.None)).Tidy();
+                if (preference == Preference.None)
+                    preferences.Remove(id);
+                else
+                    preferences[id] = preference;
+            }
+
+            account.Update(account.Account with { Preferences = preferences });
+            changed = true;
+        }
+
+        if (changed)
+            Save();
+    }
+
+    private List<CharacterView> Members(string group) => Characters.Where(c => c.InGroup(group)).ToList();
+
+    private static List<string> Without(IEnumerable<string> groups, string group) =>
+        groups.Where(g => !string.Equals(g, group, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private void Regroup()
+    {
+        var latest = Characters
+            .SelectMany(c => c.Groups.Select(name => (Name: name, Character: c)))
+            .GroupBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new Group(g.First().Name, g.Select(m => m.Character).ToList()))
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (latest.Count == Groups.Count && latest.Zip(Groups).All(pair => pair.First.Same(pair.Second)))
             return;
 
-        var id = character.Character.Id;
-        var preferences = account.Account.Preferences.Where(p => p.Key != id).ToDictionary();
-        var changed = change(account.Account.Preferences.GetValueOrDefault(id, Preference.None)).Tidy();
-        if (changed != Preference.None)
-            preferences[id] = changed;
-
-        account.Update(account.Account with { Preferences = preferences });
-        Save();
+        Groups.Clear();
+        foreach (var group in latest)
+            Groups.Add(group);
     }
+
+    private AccountView View(Account account) => new(account) { ByPlayed = byPlayed, Filter = filter };
 
     private static bool Unreachable(Exception e) =>
         e is JagexException or HttpRequestException or TaskCanceledException;

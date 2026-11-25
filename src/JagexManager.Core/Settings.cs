@@ -12,6 +12,12 @@ public enum Theme
     Dark,
 }
 
+public enum Order
+{
+    Jagex,
+    Played,
+}
+
 public sealed record Settings
 {
     private static readonly JsonSerializerOptions Format = new()
@@ -19,6 +25,8 @@ public sealed record Settings
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
     };
+
+    public const int MaxGap = 60;
 
     public string Default { get; init; } = Program.RuneLite;
 
@@ -33,6 +41,15 @@ public sealed record Settings
     public bool CheckUpdates { get; init; } = true;
 
     public bool UseTray { get; init; }
+
+    public bool WarnMembership { get; init; } = true;
+
+    public Order Order { get; init; } = Order.Jagex;
+
+    public int Gap { get; init; } = 5;
+
+    [JsonIgnore]
+    public TimeSpan Wait => TimeSpan.FromSeconds(Gap);
 
     [JsonIgnore]
     public IReadOnlyList<Program> Programs => Offered.Select(p => Launch(p, Options.GetValueOrDefault(p.Name))).ToList();
@@ -99,11 +116,15 @@ public sealed record Settings
         && UseGameFont == other.UseGameFont
         && CheckUpdates == other.CheckUpdates
         && UseTray == other.UseTray
+        && WarnMembership == other.WarnMembership
+        && Order == other.Order
+        && Gap == other.Gap
         && Custom.SequenceEqual(other.Custom)
         && Options.Count == other.Options.Count
         && Options.All(o => other.Options.GetValueOrDefault(o.Key) == o.Value);
 
-    public override int GetHashCode() => HashCode.Combine(Default, Theme, UseGameFont, CheckUpdates, UseTray, Custom.Count, Options.Count);
+    public override int GetHashCode() =>
+        HashCode.Combine(Default, Theme, UseGameFont, CheckUpdates, UseTray, WarnMembership, Order, HashCode.Combine(Gap, Custom.Count, Options.Count));
 
     public static Settings Load(string path)
     {
@@ -119,6 +140,7 @@ public sealed record Settings
                 return defaults;
 
             var theme = Text(root, nameof(Theme));
+            var order = Text(root, nameof(Order));
 
             var settings = new Settings
             {
@@ -129,6 +151,9 @@ public sealed record Settings
                 UseGameFont = Flag(root, nameof(UseGameFont)) ?? defaults.UseGameFont,
                 CheckUpdates = Flag(root, nameof(CheckUpdates)) ?? defaults.CheckUpdates,
                 UseTray = Flag(root, nameof(UseTray)) ?? defaults.UseTray,
+                WarnMembership = Flag(root, nameof(WarnMembership)) ?? defaults.WarnMembership,
+                Order = Enum.GetNames<Order>().Contains(order) ? Enum.Parse<Order>(order!) : defaults.Order,
+                Gap = Math.Clamp(Number(root, nameof(Gap)) ?? defaults.Gap, 0, MaxGap),
             };
 
             if (Legacy(root))
@@ -212,6 +237,11 @@ public sealed record Settings
             _ => null,
         }
         : null;
+
+    private static int? Number(JsonElement parent, string name) =>
+        parent.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : null;
 
     private static string? Text(JsonElement parent, string name) =>
         parent.TryGetProperty(name, out var value) ? Text(value) : null;

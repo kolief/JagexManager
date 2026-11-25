@@ -19,8 +19,12 @@ namespace JagexManager;
 [SuppressMessage("Design", "CA1001", Justification = "The tray icon is disposed when the window closes.")]
 public partial class MainWindow : Window
 {
+    public const int SearchLimit = 50;
+
     private const int NicknameLimit = 32;
     private const int OptionsLimit = 1000;
+    private const int GroupLimit = 32;
+    private const int SearchFrom = 6;
 
     private static readonly string SettingsPath = Path.Combine(App.DataFolder, "settings.json");
     private static readonly string FontPath = Path.Combine(App.DataFolder, "fonts", "runescape.ttf");
@@ -36,6 +40,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer freshen = new() { Interval = TimeSpan.FromHours(1) };
     private readonly bool fontOffered = GameFont.Available(GameFont.Repository);
     private readonly Tray tray;
+    private readonly HashSet<(string Id, DateTimeOffset Ends)> warned = [];
     private Settings settings;
     private bool gameFont;
     private bool launcherBusy;
@@ -48,26 +53,36 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         roster = new Roster(vault, jagex);
-        tray = new Tray(this, Restore, Close);
+        tray = new Tray(this, Restore, Close, TrayItems);
         InitializeComponent();
 
         Title = $"JagexManager {typeof(App).Assembly.GetName().Version?.ToString(3)}";
 
         List.ItemsSource = roster.Accounts;
+        GroupList.ItemsSource = roster.Groups;
+        roster.Groups.CollectionChanged += (_, _) => ShowGroups();
         settings = Settings.Load(SettingsPath);
         App.Show(settings.Theme);
+        roster.ByPlayed = settings.Order == Order.Played;
         ShowFont(settings.UseGameFont);
         ShowSettings();
 
         watch.Tick += (_, _) => roster.DropClosed();
         watch.Start();
-        freshen.Tick += async (_, _) => await RefreshAllAsync();
+        freshen.Tick += async (_, _) =>
+        {
+            await RefreshAllAsync();
+            TrimHidden();
+        };
 
         Loaded += async (_, _) => await LoadAsync();
         StateChanged += (_, _) =>
         {
             if (WindowState != WindowState.Minimized)
+            {
+                tray.Hide();
                 return;
+            }
 
             HideToTray();
             WorkingSet.Trim();
@@ -134,6 +149,11 @@ public partial class MainWindow : Window
         if (settings.CheckUpdates)
             await CheckUpdateAsync();
 
+        TrimHidden();
+    }
+
+    private void TrimHidden()
+    {
         if (WindowState == WindowState.Minimized)
             WorkingSet.Trim();
     }
@@ -161,10 +181,34 @@ public partial class MainWindow : Window
     {
         refreshed = DateTimeOffset.UtcNow;
         await TryAsync(roster.RefreshAllAsync);
-
-        if (WindowState == WindowState.Minimized)
-            WorkingSet.Trim();
+        ShowSearch();
+        Warn();
     }
+
+    private void Warn()
+    {
+        if (!settings.WarnMembership)
+            return;
+
+        var lapsing = roster.Accounts
+            .Where(a => !a.Expired)
+            .SelectMany(a => a.Characters)
+            .Where(c => c.Lapsing && !c.Hidden && c.Character.Membership?.Ends is { } ends && warned.Add((c.Character.Id, ends)))
+            .ToList();
+
+        if (lapsing.Count == 0)
+            return;
+
+        var text = lapsing.Count == 1
+            ? $"Membership for {lapsing[0].Name} ends in {lapsing[0].TimeLeft} and will not renew."
+            : $"Membership ends within three days for {Names(lapsing)}. None of them renew.";
+
+        if ((IsVisible && WindowState != WindowState.Minimized) || !tray.Tell("Membership ending", text))
+            Say(text);
+    }
+
+    private static string Names(List<CharacterView> characters) =>
+        $"{string.Join(", ", characters.Take(characters.Count - 1).Select(c => c.Name))} and {characters[^1].Name}";
 
     private void Open()
     {
@@ -190,6 +234,7 @@ public partial class MainWindow : Window
                 roster.Add(account);
                 Say($"Signed in as {account.Name}.");
             });
+            ShowSearch();
         }
         else if (window.Error is { } error)
         {
@@ -212,6 +257,7 @@ public partial class MainWindow : Window
             roster.Remove(account);
             Say($"Removed {account.Name}.");
         });
+        ShowSearch();
     }
 
     private async void Refresh(object sender, RoutedEventArgs e)
@@ -224,6 +270,7 @@ public partial class MainWindow : Window
         if (!roster.Accounts.Contains(account))
             return;
 
+        ShowSearch();
         if (reached == false)
             Say("Jagex could not be reached. Try again in a moment.");
         else if (reached == true && !account.Expired)
@@ -416,13 +463,35 @@ public partial class MainWindow : Window
             return;
         }
 
-        IReadOnlyList<Outcome> outcomes = [];
-        await TryAsync(async () => outcomes = await roster.PlayAllAsync(account, c => settings.Find(c.Choice, c.Options)));
-        if (outcomes.Count > 0)
-            Say(Summary(account, outcomes));
+        await PlayManyAsync(account.Playable, $"on {account.Name}");
     }
 
-    private static string Summary(AccountView account, IReadOnlyList<Outcome> outcomes)
+    private async void PlayGroup(object sender, RoutedEventArgs e) =>
+        await PlayGroupAsync((Group)((FrameworkElement)sender).DataContext);
+
+    private async Task<bool> PlayGroupAsync(Group group)
+    {
+        var waiting = group.Characters.Where(c => !c.Running && c.Ready).ToList();
+        if (waiting.Count == 0)
+        {
+            Say($"Every character in {group.Name} is already running or starting.");
+            return true;
+        }
+
+        return await PlayManyAsync(waiting, $"in {group.Name}");
+    }
+
+    private async Task<bool> PlayManyAsync(IReadOnlyList<CharacterView> waiting, string place)
+    {
+        IReadOnlyList<Outcome> outcomes = [];
+        await TryAsync(async () => outcomes = await roster.PlayAllAsync(waiting, c => settings.Find(c.Choice, c.Options), settings.Wait));
+        if (outcomes.Count > 0)
+            Say(Summary(place, outcomes));
+
+        return outcomes.Count > 0 && outcomes.All(o => o.Error is null);
+    }
+
+    private static string Summary(string place, IReadOnlyList<Outcome> outcomes)
     {
         var failed = outcomes.Where(o => o.Error is not null).ToList();
         var started = outcomes.Count - failed.Count;
@@ -430,11 +499,131 @@ public partial class MainWindow : Window
         {
             return started == 1
                 ? $"Started {outcomes[0].Character.Name} in {outcomes[0].Program.Name}."
-                : $"Started {started} characters on {account.Name}.";
+                : $"Started {started} characters {place}.";
         }
 
         var first = failed[0];
-        return $"Started {started} of {outcomes.Count} characters on {account.Name}. {first.Character.Name}: {first.Error}";
+        if (started == 0 && failed.All(f => f.Error == first.Error))
+            return first.Error!;
+
+        return $"Started {started} of {outcomes.Count} characters {place}. {first.Character.Name}: {first.Error}";
+    }
+
+    private void OfferGroup(object sender, MouseButtonEventArgs e)
+    {
+        var row = (FrameworkElement)sender;
+        var group = (Group)row.DataContext;
+        var menu = MenuBelow(row);
+        menu.Placement = PlacementMode.MousePoint;
+        menu.Items.Add(Display.Item("_Play", async () => await PlayGroupAsync(group)));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Display.Item("_Rename…", () => RenameGroup(group)));
+        menu.Items.Add(Display.Item("_Delete group", () => DeleteGroup(group)));
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void RenameGroup(Group group)
+    {
+        var answer = Preference.Clean(Prompt.Ask(this, title: "Rename group", question: $"New name for {group.Name}",
+            note: "Groups with the same name are joined together.", answer: group.Name, limit: GroupLimit));
+
+        if (answer is not null && answer != group.Name && Try(() => roster.RenameGroup(group.Name, answer)))
+            Say($"Renamed {group.Name} to {answer}.");
+    }
+
+    private void DeleteGroup(Group group)
+    {
+        if (Try(() => roster.Ungroup(group.Name)))
+            Say($"Deleted {group.Name}. Its characters are still on their accounts.");
+    }
+
+    private void ShowGroups() =>
+        GroupsCard.Visibility = roster.Groups.Count > 0 && roster.Filter is null ? Visibility.Visible : Visibility.Collapsed;
+
+    private void ShowSearch()
+    {
+        var wanted = roster.Filter is not null || roster.Accounts.Sum(a => a.Characters.Count) >= SearchFrom;
+        SearchArea.Visibility = wanted ? Visibility.Visible : Visibility.Collapsed;
+        NoMatch.Text = $"No characters match \u201c{roster.Filter}\u201d.";
+        NoMatch.Visibility = roster.Found ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void Search(object sender, TextChangedEventArgs e)
+    {
+        roster.Filter = SearchBox.Text;
+        ShowGroups();
+        ShowSearch();
+    }
+
+    private void ClearSearch(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || SearchBox.Text.Length == 0)
+            return;
+
+        SearchBox.Clear();
+        e.Handled = true;
+    }
+
+    private void FindCharacter(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (SearchArea.Visibility != Visibility.Visible)
+            return;
+
+        AccountsTab.IsChecked = true;
+        SearchBox.Focus();
+        SearchBox.SelectAll();
+    }
+
+    private List<Control> TrayItems()
+    {
+        var items = new List<Control>();
+        foreach (var group in roster.Groups)
+            items.Add(Display.Item(Literal($"Play {group.Name}"), async () => await FromTrayAsync(PlayGroupAsync(group))));
+
+        if (items.Count > 0)
+            items.Add(new Separator());
+
+        var accounts = roster.Accounts.Where(a => !a.Expired && a.Characters.Any(c => c.Listed)).ToList();
+        foreach (var account in accounts)
+        {
+            var characters = account.Characters.Where(c => c.Listed).Select(TrayItem).ToList();
+            if (accounts.Count == 1)
+            {
+                items.AddRange(characters);
+                continue;
+            }
+
+            var submenu = new MenuItem { Header = Literal(account.Name) };
+            foreach (var item in characters)
+                submenu.Items.Add(item);
+            items.Add(submenu);
+        }
+
+        if (accounts.Count > 0)
+            items.Add(new Separator());
+
+        return items;
+    }
+
+    private MenuItem TrayItem(CharacterView character)
+    {
+        var item = Display.Item(Literal(character.Name), async () =>
+        {
+            if (character.Running)
+                ShowClient(character);
+            else
+                await FromTrayAsync(PlayAsync(character));
+        });
+        item.IsChecked = character.Running;
+        item.IsEnabled = character.Ready;
+        return item;
+    }
+
+    private async Task FromTrayAsync(Task<bool> play)
+    {
+        if (!await play)
+            Restore();
     }
 
     private void ToggleShowHidden(object sender, RoutedEventArgs e)
@@ -479,9 +668,20 @@ public partial class MainWindow : Window
 
     private void AddCharacterItems(ContextMenu menu, CharacterView character)
     {
+        if (character.Running)
+        {
+            menu.Items.Add(Display.Item("Show _window", () => ShowClient(character)));
+            menu.Items.Add(Display.Item("_Stop client", () => StopClient(character)));
+            menu.Items.Add(new Separator());
+        }
+
         menu.Items.Add(Display.Item("_Rename…", () => Rename(character)));
         menu.Items.Add(Display.Item("_Launch options…", () => AskOptions(character)));
-        menu.Items.Add(Display.Item(character.Hidden ? "_Show" : "_Hide", () => ToggleHidden(character)));
+        if (ProfileItems(character) is { } profiles)
+            menu.Items.Add(profiles);
+
+        menu.Items.Add(GroupItems(character));
+        menu.Items.Add(Display.Item(character.Hidden ? "_Show in list" : "_Hide", () => ToggleHidden(character)));
         menu.Items.Add(new Separator());
 
         var copy = Display.Item("_Copy session details", () => CopySession(character));
@@ -508,6 +708,87 @@ public partial class MainWindow : Window
 
         if (answer is not null && Try(() => roster.SetOptions(character, answer, client)))
             Say(character.Options is { } options ? $"{character.Name} starts {client} with {options}." : $"{character.Name} uses the launch options from Settings.");
+    }
+
+    private MenuItem? ProfileItems(CharacterView character)
+    {
+        var client = settings.Find(character.Choice);
+        if (client.Name != Program.RuneLite || Profiles.Read(Profiles.Saved) is not { Count: > 0 } profiles)
+            return null;
+
+        var options = character.Options ?? settings.Options.GetValueOrDefault(Program.RuneLite);
+        var current = Profiles.Of(options);
+        var menu = new MenuItem { Header = "RuneLite _profile" };
+        foreach (var profile in profiles)
+        {
+            var item = Display.Item(Literal(profile), () => UseProfile(character, Profiles.With(options, profile), profile));
+            item.IsChecked = string.Equals(profile, current, StringComparison.OrdinalIgnoreCase);
+            menu.Items.Add(item);
+        }
+
+        if (character.Options is not null && current is not null)
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Display.Item("_Use Settings", () => UseProfile(character, Profiles.With(character.Options, null), null)));
+        }
+
+        return menu;
+    }
+
+    private void UseProfile(CharacterView character, string? options, string? profile)
+    {
+        if (Try(() => roster.SetOptions(character, options, Program.RuneLite)))
+            Say(profile is null ? $"{character.Name} uses the RuneLite profile from Settings." : $"{character.Name} starts RuneLite with the {profile} profile.");
+    }
+
+    private MenuItem GroupItems(CharacterView character)
+    {
+        var menu = new MenuItem { Header = "_Groups" };
+        foreach (var group in roster.Groups)
+        {
+            var member = character.InGroup(group.Name);
+            var item = Display.Item(Literal(group.Name), () => ToggleGroup(character, group.Name, !member));
+            item.IsChecked = member;
+            menu.Items.Add(item);
+        }
+
+        if (menu.Items.Count > 0)
+            menu.Items.Add(new Separator());
+
+        menu.Items.Add(Display.Item("_New group…", () => NewGroup(character)));
+        return menu;
+    }
+
+    private void NewGroup(CharacterView character)
+    {
+        var answer = Preference.Clean(Prompt.Ask(this, title: "New group", question: $"Name of the group to add {character.Name} to",
+            note: "Play a whole group from the top of the list or the notification area.", answer: "", limit: GroupLimit));
+
+        if (answer is not null)
+            ToggleGroup(character, answer, join: true);
+    }
+
+    private void ToggleGroup(CharacterView character, string group, bool join)
+    {
+        void Change()
+        {
+            if (join)
+                roster.Join(character, group);
+            else
+                roster.Leave(character, group);
+        }
+
+        if (Try(Change))
+            Say(join ? $"Added {character.Name} to {group}." : $"Took {character.Name} out of {group}.");
+    }
+
+    private void ShowClient(object sender, RoutedEventArgs e) =>
+        ShowClient((CharacterView)((FrameworkElement)sender).DataContext);
+
+    private void ShowClient(CharacterView character)
+    {
+        if (!character.Show())
+            Say($"The game window for {character.Name} could not be found. It may still be starting.");
     }
 
     private void ToggleHidden(CharacterView character)
@@ -585,10 +866,11 @@ public partial class MainWindow : Window
         return started;
     }
 
-    private void Stop(object sender, RoutedEventArgs e)
-    {
-        var character = (CharacterView)((FrameworkElement)sender).DataContext;
+    private void Stop(object sender, RoutedEventArgs e) =>
+        StopClient((CharacterView)((FrameworkElement)sender).DataContext);
 
+    private void StopClient(CharacterView character)
+    {
         Try(() =>
         {
             character.Stop();
@@ -661,6 +943,21 @@ public partial class MainWindow : Window
     private void ChangeTray(object sender, RoutedEventArgs e) =>
         Change(settings with { UseTray = TrayBox.IsChecked == true });
 
+    private void ChangeWarn(object sender, RoutedEventArgs e) =>
+        Change(settings with { WarnMembership = WarnBox.IsChecked == true });
+
+    private void ChangeOrder(object sender, SelectionChangedEventArgs e)
+    {
+        if (OrderChoice.SelectedValue is Order order)
+            Change(settings with { Order = order });
+    }
+
+    private void ChangeGap(object sender, SelectionChangedEventArgs e)
+    {
+        if (GapChoice.SelectedValue is int gap)
+            Change(settings with { Gap = gap });
+    }
+
     private void ChangeAutostart(object sender, RoutedEventArgs e)
     {
         var wanted = AutostartBox.IsChecked == true;
@@ -686,6 +983,9 @@ public partial class MainWindow : Window
         if (settings.Theme != previous.Theme)
             App.Show(settings.Theme);
 
+        if (settings.Order != previous.Order)
+            roster.ByPlayed = settings.Order == Order.Played;
+
         Try(() => settings.Save(SettingsPath));
     }
 
@@ -709,8 +1009,12 @@ public partial class MainWindow : Window
         RuneScapeFont.IsEnabled = fontOffered || gameFont;
         FontChoice.SelectedItem = gameFont ? RuneScapeFont : DefaultFont;
 
+        OrderChoice.SelectedValue = settings.Order;
+        GapChoice.SelectedValue = settings.Gap;
+
         UpdatesBox.IsChecked = settings.CheckUpdates;
         TrayBox.IsChecked = settings.UseTray;
+        WarnBox.IsChecked = settings.WarnMembership;
         AutostartBox.IsChecked = Autostart.Current.Enabled;
     }
 

@@ -16,7 +16,7 @@ public sealed class CharacterView : View
         this.character = character;
         owner.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(AccountView.ShowHidden))
+            if (e.PropertyName is nameof(AccountView.ShowHidden) or nameof(AccountView.Filter))
                 Raise(nameof(Visible));
         };
     }
@@ -30,7 +30,7 @@ public sealed class CharacterView : View
         {
             character = value;
             Raise(nameof(Character), nameof(Name), nameof(Nickname), nameof(RealName), nameof(Choice), nameof(Options),
-                nameof(Detail), nameof(Hidden), nameof(Visible));
+                nameof(Detail), nameof(Hidden), nameof(Visible), nameof(Groups));
             Tick();
         }
     }
@@ -47,13 +47,19 @@ public sealed class CharacterView : View
 
     public bool Hidden => Preference.Hidden;
 
-    public bool Visible => !Hidden || Owner.ShowHidden || Running;
+    public IReadOnlyList<string> Groups => Preference.Groups;
+
+    public DateTimeOffset? Played => Preference.Played;
+
+    public bool Listed => !Hidden || Owner.ShowHidden || Running;
+
+    public bool Visible => Owner.Filter is { } filter ? Matches(filter) || (Listed && Owner.Named(filter)) : Listed;
 
     public string? Detail
     {
         get
         {
-            string?[] parts = [Nickname is null ? null : RealName, Choice, Options];
+            string?[] parts = [Nickname is null ? null : RealName, Choice, Options, Ago(Played)];
             var shown = parts.OfType<string>().ToList();
             return shown.Count > 0 ? string.Join(" · ", shown) : null;
         }
@@ -68,7 +74,9 @@ public sealed class CharacterView : View
         _ => "F2P",
     };
 
-    public string? MembershipLeft => character.Membership is { Active: true, Ends: { } ends } ? Left(ends) : null;
+    public string? TimeLeft => character.Membership is { Active: true, Ends: { } ends } ? Days(ends) : null;
+
+    public string? MembershipLeft => TimeLeft is { } left ? $"{left} left" : null;
 
     public bool Lapsing =>
         character.Membership is { Active: true, Renews: false, Ends: { } ends } && ends - DateTimeOffset.UtcNow <= LapseWarning;
@@ -89,12 +97,20 @@ public sealed class CharacterView : View
         set => Set(ref ready, value, nameof(Ready));
     }
 
+    public bool InGroup(string group) => Preference.InGroup(group);
+
+    public bool Matches(string text) =>
+        Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
+        || RealName.Contains(text, StringComparison.CurrentCultureIgnoreCase);
+
     public void Tick() =>
-        Raise(nameof(Member), nameof(Membership), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing));
+        Raise(nameof(Member), nameof(Membership), nameof(TimeLeft), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing), nameof(Detail));
 
     public void Attach(Client started) => Set(ref client, started, nameof(Running), nameof(Visible));
 
     public void Stop() => client?.Stop();
+
+    public bool Show() => client?.Show() ?? false;
 
     public void DropClosed()
     {
@@ -110,8 +126,23 @@ public sealed class CharacterView : View
 
     private Preference Preference => Owner.Account.Preferences.GetValueOrDefault(character.Id, Preference.None);
 
-    private static string Left(DateTimeOffset ends) =>
-        (int)Math.Ceiling((ends - DateTimeOffset.UtcNow).TotalDays) is var days && days == 1 ? "1 day left" : $"{days} days left";
+    private static string Days(DateTimeOffset ends) =>
+        (int)Math.Ceiling((ends - DateTimeOffset.UtcNow).TotalDays) is var days && days == 1 ? "1 day" : $"{days} days";
+
+    private static string? Ago(DateTimeOffset? played)
+    {
+        if (played is not { } when)
+            return null;
+
+        var days = (DateTime.Today - when.ToLocalTime().Date).Days;
+        return days switch
+        {
+            <= 0 => "Played today",
+            1 => "Played yesterday",
+            < 7 => $"Played {days} days ago",
+            _ => $"Played on {Day(when)}",
+        };
+    }
 
     private static string Day(DateTimeOffset date) =>
         date.ToLocalTime().ToString("d MMMM yyyy", CultureInfo.CurrentCulture);

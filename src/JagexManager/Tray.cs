@@ -11,12 +11,15 @@ public sealed class Tray : IDisposable
     private const int Callback = 0x8001;
     private const int LeftUp = 0x0202;
     private const int RightUp = 0x0205;
+    private const int BalloonClick = 0x0405;
     private const int Add = 0;
     private const int Modify = 1;
     private const int Delete = 2;
     private const int MessageFlag = 1;
     private const int IconFlag = 2;
     private const int TipFlag = 4;
+    private const int InfoFlag = 0x10;
+    private const int InfoIcon = 1;
 
     private static readonly int TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
@@ -24,15 +27,17 @@ public sealed class Tray : IDisposable
     private readonly Window owner;
     private readonly Action open;
     private readonly Action exit;
+    private readonly Func<IEnumerable<Control>> offer;
     private readonly nint icon;
     private bool wanted;
     private bool shown;
 
-    public Tray(Window owner, Action open, Action exit)
+    public Tray(Window owner, Action open, Action exit, Func<IEnumerable<Control>> offer)
     {
         this.owner = owner;
         this.open = open;
         this.exit = exit;
+        this.offer = offer;
         window.AddHook(Listen);
 
         nint small = 0;
@@ -47,6 +52,19 @@ public sealed class Tray : IDisposable
             shown = Notify(Add) || Notify(Modify);
 
         return shown;
+    }
+
+    public bool Tell(string title, string text)
+    {
+        if (!Show())
+            return false;
+
+        var data = Data();
+        data.Flags |= InfoFlag;
+        data.InfoTitle = title;
+        data.Info = text;
+        data.InfoFlags = InfoIcon;
+        return Shell_NotifyIcon(Modify, ref data);
     }
 
     public void Hide()
@@ -66,17 +84,19 @@ public sealed class Tray : IDisposable
 
     private bool Notify(int action)
     {
-        var data = new IconData
-        {
-            Size = Marshal.SizeOf<IconData>(),
-            Window = window.Handle,
-            Flags = MessageFlag | IconFlag | TipFlag,
-            Message = Callback,
-            Icon = icon,
-            Tip = "JagexManager",
-        };
+        var data = Data();
         return Shell_NotifyIcon(action, ref data);
     }
+
+    private IconData Data() => new()
+    {
+        Size = Marshal.SizeOf<IconData>(),
+        Window = window.Handle,
+        Flags = MessageFlag | IconFlag | TipFlag,
+        Message = Callback,
+        Icon = icon,
+        Tip = "JagexManager",
+    };
 
     private nint Listen(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
@@ -85,7 +105,7 @@ public sealed class Tray : IDisposable
             shown = false;
             _ = Show();
         }
-        else if (message == Callback && (int)lParam == LeftUp)
+        else if (message == Callback && (int)lParam is LeftUp or BalloonClick)
         {
             open();
         }
@@ -101,6 +121,9 @@ public sealed class Tray : IDisposable
     {
         var menu = new ContextMenu { Placement = PlacementMode.MousePoint };
         Display.Match(menu, owner);
+        foreach (var item in offer())
+            menu.Items.Add(item);
+
         menu.Items.Add(Display.Item("_Open JagexManager", open));
         menu.Items.Add(Display.Item("E_xit", exit));
         menu.IsOpen = true;

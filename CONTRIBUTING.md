@@ -27,9 +27,11 @@ Run `dotnet format` to fix formatting.
 - **No new dependencies without a reason.** The app ships as one file and
   handles credentials; every dependency is something users must trust.
 - **Keep memory low.** Releases are published uncompressed, because a
-  compressed single-file exe unpacks every library into memory at start-up, and
-  the window renders in software. Both keep the app near 40 MB. Measure memory
-  before changing either.
+  compressed single-file exe unpacks every library into memory at start-up.
+  The cost is a larger download. The window also renders in software, which
+  costs a little CPU while it redraws. Together they keep the app near 40 MB
+  with the window open, as shown in Task Manager's Memory column (the private
+  working set). Measure that before changing either.
 - **Nothing that helps break Jagex's rules.** Automation of gameplay, ban
   evasion and credential sharing are out of scope.
 
@@ -48,8 +50,10 @@ Run `dotnet format` to fix formatting.
   `Default` in settings. `Custom` holds the clients the user added. Options are
   what the user typed; arguments are the whole command line. A character's
   `Preference` holds its `Choice`, its `Nickname`, its own `Options` and whether
-  it is `Hidden` from the list; a window that starts out of sight is
-  `Minimised`. `Tokens` is the token endpoint's reply; `Credentials` is the set
+  it is `Hidden` from the list, when it was last `Played`, and the `Groups` it
+  belongs to; a `Group` is every character sharing that name. A window that
+  starts out of sight is `Minimised`. The `Gap` is the wait between clients
+  when several start together. `Tokens` is the token endpoint's reply; `Credentials` is the set
   kept for the Jagex Launcher.
 
 ## How it works
@@ -75,7 +79,7 @@ Run `dotnet format` to fix formatting.
 
 | Path | Contents |
 |---|---|
-| `src/JagexManager.Core` | Sign-in flow, Jagex endpoints, encrypted vault, client launch, the Jagex Launcher's sign-in file, the account list the window binds to, the GitHub release check and starting with Windows. No UI framework. |
+| `src/JagexManager.Core` | Sign-in flow, Jagex endpoints, encrypted vault, client launch, the Jagex Launcher's sign-in file, the account list the window binds to, groups and search, RuneLite profiles, the GitHub release check and starting with Windows. No UI framework. |
 | `src/JagexManager` | The WPF windows, the embedded sign-in browser, the tray icon, the RuneLite colours and the bundled fonts. |
 
 ## Changes to the sign-in flow
