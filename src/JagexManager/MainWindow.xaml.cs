@@ -54,7 +54,7 @@ public partial class MainWindow : Window
 
         List.ItemsSource = roster.Accounts;
         GroupList.ItemsSource = roster.Groups;
-        GapChoice.ItemsSource = Settings.Gaps;
+        GapChoice.ItemsSource = Settings.Gaps.Select(gap => new ComboBoxItem { Content = gap == 0 ? "No wait" : $"{gap} seconds", Tag = gap }).ToList();
         roster.PropertyChanged += (_, _) => ShowList();
         settings = Settings.Load(SettingsPath);
         App.Show(settings.Theme);
@@ -67,7 +67,7 @@ public partial class MainWindow : Window
         freshen.Tick += async (_, _) =>
         {
             await RefreshAllAsync();
-            Settle();
+            Rest();
         };
 
         Loaded += async (_, _) => await LoadAsync();
@@ -77,7 +77,7 @@ public partial class MainWindow : Window
                 return;
 
             HideToTray();
-            Settle();
+            Rest();
         };
     }
 
@@ -98,6 +98,9 @@ public partial class MainWindow : Window
     {
         if (!IsLoaded)
             return;
+
+        if (!IsVisible)
+            roster.Arrange();
 
         tray.Hide();
         Show();
@@ -141,10 +144,10 @@ public partial class MainWindow : Window
         if (settings.CheckUpdates)
             await CheckUpdateAsync();
 
-        Settle();
+        Rest();
     }
 
-    private void Settle()
+    private void Rest()
     {
         if (WindowState != WindowState.Minimized)
             return;

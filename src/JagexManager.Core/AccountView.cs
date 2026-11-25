@@ -88,7 +88,7 @@ public sealed class AccountView : View
 
     public void Arrange() => Place(account, sort == Sort.Played ? ByPlayed(account) : account.Characters);
 
-    public void Update(Account latest) => Place(latest, sort == Sort.Played ? Kept(latest) : latest.Characters);
+    public void Update(Account latest) => Place(latest, sort == Sort.Played ? AsShown(latest) : latest.Characters);
 
     private void Place(Account latest, IReadOnlyList<Character> ordered)
     {
@@ -103,7 +103,7 @@ public sealed class AccountView : View
         for (var position = 0; position < ordered.Count; position++)
         {
             var character = ordered[position];
-            var current = Characters.Select(row => row.Character.Id).ToList().IndexOf(character.Id);
+            var current = Position(character.Id);
 
             if (current < 0)
             {
@@ -135,9 +135,17 @@ public sealed class AccountView : View
     private static List<Character> ByPlayed(Account latest) =>
         latest.Characters.OrderByDescending(c => latest.Preferences.GetValueOrDefault(c.Id)?.Played ?? DateTimeOffset.MinValue).ToList();
 
-    private List<Character> Kept(Account latest)
+    private List<Character> AsShown(Account latest) =>
+        latest.Characters.OrderBy(c => Position(c.Id) is var at and >= 0 ? at : int.MaxValue).ToList();
+
+    private int Position(string id)
     {
-        var current = Characters.Select(row => row.Character.Id).ToList();
-        return latest.Characters.OrderBy(c => current.IndexOf(c.Id) is var at and >= 0 ? at : int.MaxValue).ToList();
+        for (var position = 0; position < Characters.Count; position++)
+        {
+            if (Characters[position].Character.Id == id)
+                return position;
+        }
+
+        return -1;
     }
 }

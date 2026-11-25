@@ -99,10 +99,6 @@ public sealed class CharacterView : View
 
     public bool InGroup(string group) => Preference.InGroup(group);
 
-    private bool Matches(string text) =>
-        Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
-        || RealName.Contains(text, StringComparison.CurrentCultureIgnoreCase);
-
     public void Tick() =>
         Raise(nameof(Member), nameof(Membership), nameof(DaysLeft), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing), nameof(Detail));
 
@@ -126,6 +122,10 @@ public sealed class CharacterView : View
         client?.Dispose();
         Set(ref client, null, nameof(Running), nameof(Visible));
     }
+
+    private bool Matches(string text) =>
+        Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
+        || RealName.Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
     private Preference Preference => Owner.Account.Preferences.GetValueOrDefault(character.Id, Preference.None);
 

@@ -477,27 +477,10 @@
                                        Text="Extra client options, such as --profile=Main." />
 
                             <DockPanel Margin="0,12,0,0">
-                                <ComboBox x:Name="GapChoice" DockPanel.Dock="Right" MinWidth="160"
+                                <ComboBox x:Name="GapChoice" DockPanel.Dock="Right" MinWidth="160" SelectedValuePath="Tag"
                                           SelectionChanged="ChangeGap"
                                           AutomationProperties.LabeledBy="{Binding ElementName=GapLabel}"
-                                          AutomationProperties.HelpText="{Binding Text, ElementName=GapNote}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock>
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="{Binding StringFormat={}{0} seconds}" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding}" Value="0">
-                                                                <Setter Property="Text" Value="No wait" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
+                                          AutomationProperties.HelpText="{Binding Text, ElementName=GapNote}" />
                                 <TextBlock x:Name="GapLabel" Text="Wait between clients" VerticalAlignment="Center" />
                             </DockPanel>
                             <TextBlock x:Name="GapNote" Margin="0,4,0,0" Style="{StaticResource Note}"

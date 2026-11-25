@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Security.Cryptography;
 
 namespace JagexManager;
 
@@ -36,6 +37,8 @@ public enum Handover
 public sealed class Roster(Vault vault, Jagex jagex) : View
 {
     public const int SearchFrom = 6;
+
+    private const int NamesShown = 3;
 
     private readonly HashSet<(string Id, DateTimeOffset Ends)> warned = [];
     private bool refreshing;
@@ -282,13 +285,9 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         if (!character.Running && !program.Installed)
             throw new PlayException($"{program.Name} was not found. Choose another client.");
 
-        var account = character.Owner;
-        await RefreshAsync(account);
+        await RefreshAsync(character.Owner);
 
-        if (!Accounts.Contains(account))
-            throw new PlayException($"{character.Name} is no longer on this account.");
-
-        Usable(account);
+        Confirm(character);
         if (Start(character, program))
             Started(character);
     }
@@ -309,20 +308,19 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
                 Program? program = null;
                 try
                 {
-                    Present(character);
+                    Confirm(character);
                     if (launched && gap > TimeSpan.Zero && !character.Running)
                     {
                         await Task.Delay(gap);
-                        Present(character);
+                        Confirm(character);
                     }
 
                     program = pick(character);
-                    if (Start(character, program))
-                    {
-                        launched = true;
-                        Started(character);
-                    }
+                    if (!Start(character, program))
+                        continue;
 
+                    launched = true;
+                    Started(character);
                     outcomes.Add(new Outcome(character, program, null));
                 }
                 catch (Exception e) when (Failed(e))
@@ -414,9 +412,6 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     private static bool Start(CharacterView character, Program program)
     {
         var account = character.Owner;
-        if (!account.Characters.Contains(character))
-            throw new PlayException($"{character.Name} is no longer on this account.");
-
         if (character.Running)
             return false;
 
@@ -427,23 +422,32 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         return true;
     }
 
-    private void Present(CharacterView character)
+    private void Confirm(CharacterView character)
     {
-        if (!Accounts.Contains(character.Owner))
-            throw new PlayException($"{character.Owner.Name} is no longer in JagexManager.");
+        var account = character.Owner;
+        if (!Accounts.Contains(account))
+            throw new PlayException($"{account.Name} is no longer in JagexManager.");
 
-        Usable(character.Owner);
+        if (!account.Characters.Contains(character))
+            throw new PlayException($"{character.Name} is no longer on this account.");
+
+        Usable(account);
     }
 
     private void Started(CharacterView character)
     {
         Changed();
+        TryStamp(character);
+    }
+
+    private void TryStamp(CharacterView character)
+    {
         var now = DateTimeOffset.UtcNow;
         try
         {
             Prefer(character, p => p with { Played = now });
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or CryptographicException)
         {
         }
     }
@@ -460,8 +464,13 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
     private void Changed() => Raise(nameof(Matched), nameof(Searchable), nameof(GroupsOffered));
 
-    private static string Names(List<CharacterView> characters) =>
-        $"{string.Join(", ", characters.SkipLast(1).Select(c => c.Name))} and {characters[^1].Name}";
+    private static string Names(List<CharacterView> characters)
+    {
+        if (characters.Count > NamesShown)
+            return $"{string.Join(", ", characters.Take(NamesShown).Select(c => c.Name))} and {characters.Count - NamesShown} others";
+
+        return $"{string.Join(", ", characters.SkipLast(1).Select(c => c.Name))} and {characters[^1].Name}";
+    }
 
     private void Prefer(CharacterView character, Func<Preference, Preference> change) => Prefer([character], change);
 

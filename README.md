@@ -24,7 +24,7 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
   your mouse.
 - See whether each character is P2P, with the days of membership left, or F2P.
   The days turn amber in the last three days of a membership that does not
-  renew. Each time JagexManager starts, it also warns you about these once.
+  renew. JagexManager also warns you about each one once while it runs.
 - Start characters and groups from the notification area icon when
   JagexManager is minimised there.
 - Open the Jagex Launcher signed in to any of your accounts, or sign it out.
