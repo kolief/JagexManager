@@ -2,7 +2,7 @@ namespace JagexManager;
 
 public sealed class Group(string name, IReadOnlyList<CharacterView> characters)
 {
-    public static StringComparer Names { get; } = StringComparer.OrdinalIgnoreCase;
+    public static StringComparer NameComparer { get; } = StringComparer.OrdinalIgnoreCase;
 
     public string Name { get; } = name;
 

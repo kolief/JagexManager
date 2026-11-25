@@ -20,8 +20,8 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
 - Choose a different client, launch options and RuneLite profile for each
   character, give characters your own names, and hide the ones you never play.
 - Search your characters, see when each was last played, and sort by it. The
-  order catches up the next time accounts are checked, so rows never move
-  under your mouse.
+  order catches up while JagexManager is minimised, so rows never move under
+  your mouse.
 - See whether each character is P2P, with the days of membership left, or F2P.
   The days turn amber in the last three days of a membership that does not
   renew. Each time JagexManager starts, it also warns you about these once.
@@ -46,8 +46,9 @@ Windows 10 or 11 with RuneLite or the Jagex Launcher installed.
    profiles, add it to a group, or hide it. Launch options belong to the client
    they were set for, and are cleared if you pick another client for that
    character.
-5. Groups appear at the top of the list. Click **Play** on a group to start
-   all of its characters, or right-click it to rename or delete it.
+5. Groups appear at the top of the list, except while you search. Click
+   **Play** on a group to start all of its characters, or use the arrow next to
+   it, or right-click it, to rename or delete it.
 6. While a character is running, click the window button next to **Stop** to
    bring its game window to the front.
 7. With six or more characters, a search box appears above the list. Press

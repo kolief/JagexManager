@@ -53,7 +53,7 @@ public sealed class CharacterView : View
 
     public bool Listed => !Hidden || Owner.ShowHidden || Running;
 
-    public bool Visible => Owner.Search is { } search ? Matches(search) || (Listed && Owner.Named(search)) : Listed;
+    public bool Visible => Owner.Search is { } search ? Matches(search) || (Listed && Owner.Matches(search)) : Listed;
 
     public string? Detail
     {
@@ -99,7 +99,7 @@ public sealed class CharacterView : View
 
     public bool InGroup(string group) => Preference.InGroup(group);
 
-    public bool Matches(string text) =>
+    private bool Matches(string text) =>
         Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
         || RealName.Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
@@ -112,10 +112,13 @@ public sealed class CharacterView : View
 
     public bool Focus() => client?.Focus() ?? false;
 
-    public void DropClosed()
+    public bool DropClosed()
     {
-        if (client is { Running: false })
-            Forget();
+        if (client is not { Running: false })
+            return false;
+
+        Forget();
+        return true;
     }
 
     public void Forget()

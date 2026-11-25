@@ -5,7 +5,26 @@ namespace JagexManager;
 
 public sealed class PlayException(string message) : Exception(message);
 
-public sealed record Outcome(CharacterView Character, Program Program, string? Error);
+public sealed record Outcome(CharacterView Character, Program Program, string? Error)
+{
+    public static string Summary(IReadOnlyList<Outcome> outcomes, string place)
+    {
+        var failed = outcomes.Where(o => o.Error is not null).ToList();
+        var started = outcomes.Count - failed.Count;
+        if (failed.Count == 0)
+        {
+            return started == 1
+                ? $"Started {outcomes[0].Character.Name} in {outcomes[0].Program.Name}."
+                : $"Started {started} characters {place}.";
+        }
+
+        var first = failed[0];
+        if (started == 0 && failed.All(f => f.Error == first.Error) && first.Error is { } shared)
+            return shared;
+
+        return $"Started {started} of {outcomes.Count} characters {place}. {first.Character.Name}: {first.Error}";
+    }
+}
 
 public enum Handover
 {
@@ -54,9 +73,11 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         }
     }
 
-    public bool Found => search is null || Accounts.Any(a => a.Matched);
+    public bool Matched => search is null || Accounts.Any(a => a.Matched);
 
     public bool Searchable => search is not null || Characters.Count() >= SearchFrom;
+
+    public bool GroupsOffered => Groups.Count > 0 && search is null;
 
     private IEnumerable<CharacterView> Characters => Accounts.SelectMany(a => a.Characters);
 
@@ -157,10 +178,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         {
             refreshing = false;
             foreach (var account in Accounts)
-            {
                 account.Tick();
-                account.Arrange();
-            }
         }
     }
 
@@ -182,8 +200,12 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     public void Leave(CharacterView character, string group) =>
         Prefer(character, p => p with { Groups = Without(p.Groups, group) });
 
-    public void RenameGroup(string group, string name) =>
-        Prefer(Members(group), p => p with { Groups = [.. Without(p.Groups, group), name] });
+    public string RenameGroup(string group, string name)
+    {
+        var renamed = Group.NameComparer.Equals(group, name) ? name : Existing(name);
+        Prefer(Members(group), p => p with { Groups = [.. Without(p.Groups, group), renamed] });
+        return renamed;
+    }
 
     public void DeleteGroup(string group) =>
         Prefer(Members(group), p => p with { Groups = Without(p.Groups, group) });
@@ -268,7 +290,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
         Usable(account);
         if (Start(character, program))
-            TryStamp([character]);
+            Started(character);
     }
 
     public async Task<IReadOnlyList<Outcome>> PlayAllAsync(IReadOnlyList<CharacterView> waiting, Func<CharacterView, Program> pick, TimeSpan gap)
@@ -281,31 +303,34 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
             await Task.WhenAll(waiting.Select(c => c.Owner).Distinct().Select(RefreshAsync));
 
             var outcomes = new List<Outcome>();
-            var started = new List<CharacterView>();
+            var launched = false;
             foreach (var character in waiting)
             {
-                if (started.Count > 0 && gap > TimeSpan.Zero && !character.Running)
-                    await Task.Delay(gap);
-
-                var program = pick(character);
+                Program? program = null;
                 try
                 {
-                    if (!Accounts.Contains(character.Owner))
-                        throw new PlayException($"{character.Owner.Name} is no longer in JagexManager.");
+                    Present(character);
+                    if (launched && gap > TimeSpan.Zero && !character.Running)
+                    {
+                        await Task.Delay(gap);
+                        Present(character);
+                    }
 
-                    Usable(character.Owner);
+                    program = pick(character);
                     if (Start(character, program))
-                        started.Add(character);
+                    {
+                        launched = true;
+                        Started(character);
+                    }
 
                     outcomes.Add(new Outcome(character, program, null));
                 }
-                catch (Exception e) when (e is PlayException or IOException or UnauthorizedAccessException or Win32Exception)
+                catch (Exception e) when (Failed(e))
                 {
-                    outcomes.Add(new Outcome(character, program, e.Message));
+                    outcomes.Add(new Outcome(character, program ?? pick(character), e.Message));
                 }
             }
 
-            TryStamp(started);
             return outcomes;
         }
         finally
@@ -315,10 +340,20 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         }
     }
 
+    public void Arrange()
+    {
+        foreach (var account in Accounts)
+            account.Arrange();
+    }
+
     public void DropClosed()
     {
+        var closed = false;
         foreach (var character in Characters)
-            character.DropClosed();
+            closed |= character.DropClosed();
+
+        if (closed)
+            Changed();
     }
 
     public void Forget()
@@ -327,7 +362,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
             character.Forget();
     }
 
-    public string? Warning()
+    public string? TakeWarning()
     {
         var fresh = new List<CharacterView>();
         foreach (var character in Accounts.Where(a => !a.Expired).SelectMany(a => a.Characters))
@@ -340,7 +375,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         {
             [] => null,
             [var one] => $"Membership for {one.Name} ends in {one.DaysLeft} and will not renew.",
-            _ => $"Membership for {Names(fresh)} ends within {CharacterView.LapseWarning.Days} days and will not renew.",
+            _ => $"Memberships for {Names(fresh)} end within {CharacterView.LapseWarning.Days} days and will not renew.",
         };
     }
 
@@ -392,17 +427,29 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         return true;
     }
 
-    private void TryStamp(IReadOnlyList<CharacterView> started)
+    private void Present(CharacterView character)
     {
+        if (!Accounts.Contains(character.Owner))
+            throw new PlayException($"{character.Owner.Name} is no longer in JagexManager.");
+
+        Usable(character.Owner);
+    }
+
+    private void Started(CharacterView character)
+    {
+        Changed();
         var now = DateTimeOffset.UtcNow;
         try
         {
-            Prefer(started, p => p with { Played = now });
+            Prefer(character, p => p with { Played = now });
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
     }
+
+    private static bool Failed(Exception e) =>
+        e is PlayException or IOException or UnauthorizedAccessException or Win32Exception;
 
     private void Commit()
     {
@@ -411,7 +458,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         Save();
     }
 
-    private void Changed() => Raise(nameof(Found), nameof(Searchable));
+    private void Changed() => Raise(nameof(Matched), nameof(Searchable), nameof(GroupsOffered));
 
     private static string Names(List<CharacterView> characters) =>
         $"{string.Join(", ", characters.SkipLast(1).Select(c => c.Name))} and {characters[^1].Name}";
@@ -449,19 +496,23 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
     private List<CharacterView> Members(string group) => Characters.Where(c => c.InGroup(group)).ToList();
 
-    private string Existing(string group) => Groups.FirstOrDefault(g => Group.Names.Equals(g.Name, group))?.Name ?? group;
+    private string Existing(string group)
+    {
+        var name = Preference.Clean(group) ?? group;
+        return Groups.FirstOrDefault(g => Group.NameComparer.Equals(g.Name, name))?.Name ?? name;
+    }
 
     private static List<string> Without(IEnumerable<string> groups, string group) =>
-        groups.Where(g => !Group.Names.Equals(g, group)).ToList();
+        groups.Where(g => !Group.NameComparer.Equals(g, group)).ToList();
 
     private void Regroup()
     {
         var latest = Accounts
             .SelectMany(a => a.InJagexOrder)
             .SelectMany(c => c.Groups.Select(name => (Name: name, Character: c)))
-            .GroupBy(m => m.Name, Group.Names)
+            .GroupBy(m => m.Name, Group.NameComparer)
             .Select(g => new Group(g.First().Name, g.Select(m => m.Character).ToList()))
-            .OrderBy(g => g.Name, Group.Names)
+            .OrderBy(g => g.Name, Group.NameComparer)
             .ToList();
 
         for (var position = 0; position < latest.Count; position++)

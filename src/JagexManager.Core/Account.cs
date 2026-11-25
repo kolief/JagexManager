@@ -31,7 +31,7 @@ public sealed record Preference(string? Choice = null, string? Nickname = null, 
         Groups = Grouped(Groups),
     };
 
-    public bool InGroup(string name) => Groups.Contains(name, Group.Names);
+    public bool InGroup(string name) => Groups.Contains(name, Group.NameComparer);
 
     public bool Equals(Preference? other) =>
         other is not null
@@ -50,8 +50,8 @@ public sealed record Preference(string? Choice = null, string? Nickname = null, 
         (groups ?? [])
             .Select(Clean)
             .OfType<string>()
-            .Distinct(Group.Names)
-            .Order(Group.Names)
+            .Distinct(Group.NameComparer)
+            .Order(Group.NameComparer)
             .ToList();
 }
 

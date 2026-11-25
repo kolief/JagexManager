@@ -54,8 +54,8 @@ public partial class MainWindow : Window
 
         List.ItemsSource = roster.Accounts;
         GroupList.ItemsSource = roster.Groups;
-        roster.Groups.CollectionChanged += (_, _) => ShowSearch();
-        roster.PropertyChanged += (_, _) => ShowSearch();
+        GapChoice.ItemsSource = Settings.Gaps;
+        roster.PropertyChanged += (_, _) => ShowList();
         settings = Settings.Load(SettingsPath);
         App.Show(settings.Theme);
         roster.Sort = settings.Sort;
@@ -67,7 +67,7 @@ public partial class MainWindow : Window
         freshen.Tick += async (_, _) =>
         {
             await RefreshAllAsync();
-            TrimIfMinimised();
+            Settle();
         };
 
         Loaded += async (_, _) => await LoadAsync();
@@ -77,7 +77,7 @@ public partial class MainWindow : Window
                 return;
 
             HideToTray();
-            WorkingSet.Trim();
+            Settle();
         };
     }
 
@@ -141,13 +141,16 @@ public partial class MainWindow : Window
         if (settings.CheckUpdates)
             await CheckUpdateAsync();
 
-        TrimIfMinimised();
+        Settle();
     }
 
-    private void TrimIfMinimised()
+    private void Settle()
     {
-        if (WindowState == WindowState.Minimized)
-            WorkingSet.Trim();
+        if (WindowState != WindowState.Minimized)
+            return;
+
+        roster.Arrange();
+        WorkingSet.Trim();
     }
 
     private async Task CheckUpdateAsync()
@@ -178,21 +181,21 @@ public partial class MainWindow : Window
 
     private void Warn()
     {
-        if (!settings.WarnMembership || roster.Warning() is not { } warning)
+        if (!settings.WarnMembership || roster.TakeWarning() is not { } warning)
             return;
 
         if (IsVisible || !tray.Tell("Membership ending", warning))
             Say(warning);
     }
 
-    private void ShowSearch()
+    private void ShowList()
     {
         SearchArea.Visibility = roster.Searchable ? Visibility.Visible : Visibility.Collapsed;
-        GroupsCard.Visibility = roster.Groups.Count > 0 && roster.Search is null ? Visibility.Visible : Visibility.Collapsed;
+        GroupsCard.Visibility = roster.GroupsOffered ? Visibility.Visible : Visibility.Collapsed;
 
-        var lost = !roster.Found;
+        var lost = !roster.Matched;
         NoMatch.Text = lost ? $"No characters match \u201c{roster.Search}\u201d." : "";
-        if (lost == NoMatch.IsVisible)
+        if (lost == (NoMatch.Visibility == Visibility.Visible))
             return;
 
         NoMatch.Visibility = lost ? Visibility.Visible : Visibility.Collapsed;
@@ -458,6 +461,7 @@ public partial class MainWindow : Window
         if (account.Playable.Count == 0)
         {
             Say(account.Characters.Count == 0 ? $"{account.Name} has no characters yet."
+                : roster.Search is not null ? $"Every character on {account.Name} that the search shows is hidden, running or starting."
                 : account.Characters.All(c => c.Hidden) ? $"Every character on {account.Name} is hidden."
                 : $"Every shown character on {account.Name} is already running or starting.");
             return;
@@ -486,27 +490,9 @@ public partial class MainWindow : Window
         IReadOnlyList<Outcome> outcomes = [];
         await TryAsync(async () => outcomes = await roster.PlayAllAsync(waiting, c => settings.Find(c.Choice, c.Options), TimeSpan.FromSeconds(settings.Gap)));
         if (outcomes.Count > 0)
-            Say(Summary(place, outcomes));
+            Say(Outcome.Summary(outcomes, place));
 
         return outcomes.Count > 0 && outcomes.All(o => o.Error is null);
-    }
-
-    private static string Summary(string place, IReadOnlyList<Outcome> outcomes)
-    {
-        var failed = outcomes.Where(o => o.Error is not null).ToList();
-        var started = outcomes.Count - failed.Count;
-        if (failed.Count == 0)
-        {
-            return started == 1
-                ? $"Started {outcomes[0].Character.Name} in {outcomes[0].Program.Name}."
-                : $"Started {started} characters {place}.";
-        }
-
-        var first = failed[0];
-        if (started == 0 && failed.All(f => f.Error == first.Error) && first.Error is { } shared)
-            return shared;
-
-        return $"Started {started} of {outcomes.Count} characters {place}. {first.Character.Name}: {first.Error}";
     }
 
     private void Search(object sender, TextChangedEventArgs e) => roster.Search = SearchBox.Text;

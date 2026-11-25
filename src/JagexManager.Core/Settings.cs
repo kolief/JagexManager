@@ -120,8 +120,7 @@ public sealed record Settings
         && Options.Count == other.Options.Count
         && Options.All(o => other.Options.GetValueOrDefault(o.Key) == o.Value);
 
-    public override int GetHashCode() =>
-        HashCode.Combine(Default, Theme, UseGameFont, CheckUpdates, UseTray, WarnMembership, Sort, HashCode.Combine(Gap, Custom.Count, Options.Count));
+    public override int GetHashCode() => HashCode.Combine(Default, Theme, Sort, Gap, Custom.Count, Options.Count);
 
     public static Settings Load(string path)
     {

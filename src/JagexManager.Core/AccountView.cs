@@ -59,7 +59,7 @@ public sealed class AccountView : View
     public IEnumerable<CharacterView> InJagexOrder =>
         account.Characters.Select(c => Characters.First(row => row.Character.Id == c.Id));
 
-    public bool Named(string text) => Name.Contains(text, StringComparison.CurrentCultureIgnoreCase);
+    public bool Matches(string text) => Name.Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
     public string HiddenLink => (ShowHidden, HiddenCount) switch
     {
@@ -86,11 +86,11 @@ public sealed class AccountView : View
             character.Tick();
     }
 
-    public void Arrange() => Place(account, arrange: true);
+    public void Arrange() => Place(account, sort == Sort.Played ? ByPlayed(account) : account.Characters);
 
-    public void Update(Account latest) => Place(latest, arrange: false);
+    public void Update(Account latest) => Place(latest, sort == Sort.Played ? Kept(latest) : latest.Characters);
 
-    private void Place(Account latest, bool arrange)
+    private void Place(Account latest, IReadOnlyList<Character> ordered)
     {
         account = latest;
 
@@ -100,7 +100,6 @@ public sealed class AccountView : View
             Characters.Remove(gone);
         }
 
-        var ordered = Ordered(latest, arrange);
         for (var position = 0; position < ordered.Count; position++)
         {
             var character = ordered[position];
@@ -108,7 +107,7 @@ public sealed class AccountView : View
 
             if (current < 0)
             {
-                Characters.Insert(position, new CharacterView(this, character));
+                Characters.Insert(position, Row(character));
                 continue;
             }
 
@@ -122,14 +121,22 @@ public sealed class AccountView : View
             ShowHidden = false;
     }
 
-    private IReadOnlyList<Character> Ordered(Account latest, bool arrange)
+    private CharacterView Row(Character character)
     {
-        if (sort == Sort.Jagex)
-            return latest.Characters;
+        var row = new CharacterView(this, character);
+        row.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(CharacterView.Visible))
+                Raise(nameof(Matched));
+        };
+        return row;
+    }
 
-        if (arrange)
-            return latest.Characters.OrderByDescending(c => latest.Preferences.GetValueOrDefault(c.Id)?.Played ?? DateTimeOffset.MinValue).ToList();
+    private static List<Character> ByPlayed(Account latest) =>
+        latest.Characters.OrderByDescending(c => latest.Preferences.GetValueOrDefault(c.Id)?.Played ?? DateTimeOffset.MinValue).ToList();
 
+    private List<Character> Kept(Account latest)
+    {
         var current = Characters.Select(row => row.Character.Id).ToList();
         return latest.Characters.OrderBy(c => current.IndexOf(c.Id) is var at and >= 0 ? at : int.MaxValue).ToList();
     }

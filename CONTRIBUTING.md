@@ -53,9 +53,9 @@ Run `dotnet format` to fix formatting.
   is `Hidden` from the list, when it was last `Played`, and the `Groups` it
   belongs to; a `Group` is every character sharing that name. A character is
   `Listed` when its row shows outside a search, and `Lapsing` when its
-  membership ends soon without renewing. The `Search` narrows the list to what it `Matched`; the
-  `Sort` orders characters within each account. To `Focus` a client is to
-  bring its game window to the front. A window that starts out of sight is
+  membership ends soon without renewing. What the `Search` finds is `Matched`,
+  and the `Sort` orders characters within each account. To `Focus` a client is
+  to bring its game window to the front. A window that starts out of sight is
   `Minimised`. The `Gap` is the wait between clients when several start
   together. `Tokens` is the token endpoint's reply; `Credentials` is the set
   kept for the Jagex Launcher.

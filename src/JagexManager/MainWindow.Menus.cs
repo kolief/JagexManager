@@ -37,22 +37,15 @@ public partial class MainWindow
         menu.IsOpen = true;
     }
 
-    private void OfferCharacter(object sender, MouseButtonEventArgs e)
-    {
-        var row = (FrameworkElement)sender;
-        var menu = MenuBelow(row);
-        menu.Placement = PlacementMode.MousePoint;
-        AddCharacterItems(menu, (CharacterView)row.DataContext);
-        menu.IsOpen = true;
-        e.Handled = true;
-    }
+    private void OfferCharacter(object sender, MouseButtonEventArgs e) =>
+        OfferAtMouse(sender, e, menu => AddCharacterItems(menu, (CharacterView)((FrameworkElement)sender).DataContext));
 
     private void AddCharacterItems(ContextMenu menu, CharacterView character)
     {
         if (character.Running)
         {
             menu.Items.Add(Display.Item("Show _window", () => FocusClient(character)));
-            menu.Items.Add(Display.Item("Sto_p client", () => StopClient(character)));
+            menu.Items.Add(Display.Item("S_top client", () => StopClient(character)));
             menu.Items.Add(new Separator());
         }
 
@@ -136,15 +129,7 @@ public partial class MainWindow
 
     private void ToggleGroup(CharacterView character, string group, bool join)
     {
-        void Change()
-        {
-            if (join)
-                roster.Join(character, group);
-            else
-                roster.Leave(character, group);
-        }
-
-        if (Try(Change))
+        if (Try(join ? () => roster.Join(character, group) : () => roster.Leave(character, group)))
             Say(join ? $"Added {character.Name} to {group}." : $"Took {character.Name} out of {group}.");
     }
 
@@ -156,7 +141,7 @@ public partial class MainWindow
         if (character.Focus())
             return true;
 
-        Say($"The game window for {character.Name} could not be found. It may still be starting.");
+        Say($"The game window for {character.Name} could not be brought to the front. It may still be starting.");
         return false;
     }
 
@@ -215,17 +200,10 @@ public partial class MainWindow
         Say($"Copied the session details for {character.Name}. Anyone with them can play as this character, so only paste them into programs you trust.");
     }
 
-    private void OfferGroup(object sender, MouseButtonEventArgs e)
-    {
-        var row = (FrameworkElement)sender;
-        var menu = MenuBelow(row);
-        menu.Placement = PlacementMode.MousePoint;
-        AddGroupItems(menu, (Group)row.DataContext);
-        menu.IsOpen = true;
-        e.Handled = true;
-    }
+    private void OfferGroup(object sender, MouseButtonEventArgs e) =>
+        OfferAtMouse(sender, e, menu => AddGroupItems(menu, (Group)((FrameworkElement)sender).DataContext));
 
-    private void OfferGroupMenu(object sender, RoutedEventArgs e)
+    private void OfferGroupOptions(object sender, RoutedEventArgs e)
     {
         var button = (Button)sender;
         var menu = MenuBelow(button);
@@ -246,8 +224,9 @@ public partial class MainWindow
         var answer = Preference.Clean(Prompt.Ask(this, title: "Rename group", question: $"New name for {group.Name}",
             note: "Groups with the same name are joined together.", answer: group.Name, limit: GroupLimit));
 
-        if (answer is not null && answer != group.Name && Try(() => roster.RenameGroup(group.Name, answer)))
-            Say($"Renamed {group.Name} to {answer}.");
+        string? renamed = null;
+        if (answer is not null && answer != group.Name && Try(() => renamed = roster.RenameGroup(group.Name, answer)))
+            Say($"Renamed {group.Name} to {renamed}.");
     }
 
     private void DeleteGroup(Group group)
@@ -305,6 +284,15 @@ public partial class MainWindow
     {
         if (!await play)
             Restore();
+    }
+
+    private void OfferAtMouse(object sender, MouseButtonEventArgs e, Action<ContextMenu> fill)
+    {
+        var menu = MenuBelow((UIElement)sender);
+        menu.Placement = PlacementMode.MousePoint;
+        fill(menu);
+        menu.IsOpen = true;
+        e.Handled = true;
     }
 
     private ContextMenu MenuBelow(UIElement target)

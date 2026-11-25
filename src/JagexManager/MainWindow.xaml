@@ -3,7 +3,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:app="clr-namespace:JagexManager"
         xmlns:core="clr-namespace:JagexManager;assembly=JagexManager.Core"
-        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         Title="JagexManager"
         Width="440" Height="640" MinWidth="420" MinHeight="400"
         WindowStartupLocation="CenterScreen"
@@ -242,8 +241,8 @@
                                                             <Button Padding="{StaticResource ButtonPadding}" MinWidth="64" Click="PlayGroup"
                                                                     Content="Play" Tag="&#xE768;" ContentTemplate="{StaticResource IconLabel}"
                                                                     Style="{DynamicResource AccentButtonStyle}"
-                                                                    AutomationProperties.Name="{Binding Name, StringFormat=Play {0}}" />
-                                                            <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferGroupMenu"
+                                                                    AutomationProperties.Name="{Binding Name, StringFormat=Play group {0}}" />
+                                                            <Button Padding="{StaticResource ButtonPadding}" Margin="4,0,0,0" Click="OfferGroupOptions"
                                                                     ToolTip="Group options"
                                                                     AutomationProperties.Name="{Binding Name, StringFormat=Options for {0}}">
                                                                 <TextBlock Text="&#xE70D;" Style="{StaticResource Icon}" />
@@ -478,15 +477,26 @@
                                        Text="Extra client options, such as --profile=Main." />
 
                             <DockPanel Margin="0,12,0,0">
-                                <ComboBox x:Name="GapChoice" DockPanel.Dock="Right" MinWidth="160" SelectedValuePath="Tag"
+                                <ComboBox x:Name="GapChoice" DockPanel.Dock="Right" MinWidth="160"
                                           SelectionChanged="ChangeGap"
                                           AutomationProperties.LabeledBy="{Binding ElementName=GapLabel}"
                                           AutomationProperties.HelpText="{Binding Text, ElementName=GapNote}">
-                                    <ComboBoxItem Content="No wait"><ComboBoxItem.Tag><sys:Int32>0</sys:Int32></ComboBoxItem.Tag></ComboBoxItem>
-                                    <ComboBoxItem Content="3 seconds"><ComboBoxItem.Tag><sys:Int32>3</sys:Int32></ComboBoxItem.Tag></ComboBoxItem>
-                                    <ComboBoxItem Content="5 seconds"><ComboBoxItem.Tag><sys:Int32>5</sys:Int32></ComboBoxItem.Tag></ComboBoxItem>
-                                    <ComboBoxItem Content="10 seconds"><ComboBoxItem.Tag><sys:Int32>10</sys:Int32></ComboBoxItem.Tag></ComboBoxItem>
-                                    <ComboBoxItem Content="20 seconds"><ComboBoxItem.Tag><sys:Int32>20</sys:Int32></ComboBoxItem.Tag></ComboBoxItem>
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock>
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="{Binding StringFormat={}{0} seconds}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding}" Value="0">
+                                                                <Setter Property="Text" Value="No wait" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <TextBlock x:Name="GapLabel" Text="Wait between clients" VerticalAlignment="Center" />
                             </DockPanel>

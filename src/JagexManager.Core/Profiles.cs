@@ -51,12 +51,9 @@ public static partial class Profiles
         return picked == Preference.Clean(shared) ? null : picked;
     }
 
-    public static string? With(string? options, string? profile)
+    private static string With(string? options, string profile)
     {
         var rest = Flag().Replace(options ?? "", "").Trim();
-        if (profile is null)
-            return Preference.Clean(rest);
-
         var flag = profile.Contains(' ', StringComparison.Ordinal) ? $"--profile=\"{profile}\"" : $"--profile={profile}";
         return $"{flag} {rest}".Trim();
     }
