@@ -358,7 +358,7 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <Button Click="RevealHidden" Content="{Binding HiddenLink}" HorizontalAlignment="Left"
+                                            <Button Click="ToggleShowHidden" Content="{Binding HiddenLink}" HorizontalAlignment="Left"
                                                     Style="{StaticResource Link}" FontSize="12" />
                                         </Border>
                                     </StackPanel>

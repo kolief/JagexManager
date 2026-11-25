@@ -18,16 +18,15 @@ public sealed class Vault(string path)
         var data = File.ReadAllBytes(path);
         try
         {
-            var json = ProtectedData.Unprotect(data, Entropy, DataProtectionScope.CurrentUser);
-            var accounts = JsonSerializer.Deserialize<List<Account>>(json);
-            var earlier = JsonSerializer.Deserialize<List<Earlier?>>(json);
+            using var document = JsonDocument.Parse(ProtectedData.Unprotect(data, Entropy, DataProtectionScope.CurrentUser));
+            var accounts = document.Deserialize<List<Account>>();
 
-            if (accounts is null || earlier is null || !accounts.All(Complete))
+            if (accounts is null || !accounts.All(Complete))
                 throw Damaged();
 
             return accounts.Select((a, i) => a with
             {
-                Preferences = Preferred(a.Preferences, earlier[i]?.Choices),
+                Preferences = Preferred(a.Preferences, LegacyChoices(document.RootElement[i])),
                 Credentials = a.Credentials is { Complete: true } ? a.Credentials : null,
             }).ToList();
         }
@@ -73,7 +72,8 @@ public sealed class Vault(string path)
         return preferences.Where(p => p.Value != Preference.None).ToDictionary();
     }
 
-    private static InvalidDataException Damaged() => new("The saved accounts could not be read.");
+    private static JsonElement? LegacyChoices(JsonElement account) =>
+        account.TryGetProperty("Choices", out var choices) ? choices : null;
 
-    private sealed record Earlier(JsonElement? Choices);
+    private static InvalidDataException Damaged() => new("The saved accounts could not be read.");
 }

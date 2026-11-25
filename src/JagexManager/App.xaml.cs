@@ -50,7 +50,7 @@ public partial class App : Application
         if (!first)
         {
             if (!minimised)
-                Reach();
+                WakeRunning();
 
             Shutdown();
             return;
@@ -59,25 +59,36 @@ public partial class App : Application
         DispatcherUnhandledException += Report;
         SystemParameters.StaticPropertyChanged += FollowContrast;
 
-        _ = Autostart.Current.Follow();
-
         var window = new MainWindow();
         Listen(window);
         window.Start(minimised);
+
+        if (!Autostart.Current.Repair())
+            window.Say("JagexManager could not update its Windows startup entry. Turn Start with Windows off and on again in Settings.");
     }
 
-    private static void Reach()
+    private static void WakeRunning()
     {
-        if (!EventWaitHandle.TryOpenExisting(OpenSignal, out var signal))
-        {
+        if (!Signalled())
             MessageBox.Show("JagexManager is already running.", "JagexManager", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
+    }
 
-        using (signal)
+    private static bool Signalled()
+    {
+        try
         {
-            AllowSetForegroundWindow(AnyProcess);
-            signal.Set();
+            if (!EventWaitHandle.TryOpenExisting(OpenSignal, out var signal))
+                return false;
+
+            using (signal)
+            {
+                AllowSetForegroundWindow(AnyProcess);
+                return signal.Set();
+            }
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or IOException)
+        {
+            return false;
         }
     }
 

@@ -9,7 +9,8 @@ namespace JagexManager;
 public sealed partial record Release(Version Version, Uri Page)
 {
     private const string LatestUrl = "https://api.github.com/repos/kolief/JagexManager/releases/latest";
-    private const string Pages = "/kolief/JagexManager/releases/";
+    private const string Host = "github.com";
+    private const string ReleasesPath = "/kolief/JagexManager/releases/";
 
     public static async Task<Release?> FindNewerAsync(HttpClient http, Version current)
     {
@@ -39,8 +40,10 @@ public sealed partial record Release(Version Version, Uri Page)
 
         if (!Uri.TryCreate(page, UriKind.Absolute, out var uri)
             || uri.Scheme != Uri.UriSchemeHttps
-            || uri.Host != "github.com"
-            || !uri.AbsolutePath.StartsWith(Pages, StringComparison.Ordinal))
+            || uri.Host != Host
+            || !uri.IsDefaultPort
+            || uri.UserInfo.Length > 0
+            || !uri.AbsolutePath.StartsWith(ReleasesPath, StringComparison.Ordinal))
             return null;
 
         int Part(int group) => int.Parse(match.Groups[group].Value, CultureInfo.InvariantCulture);

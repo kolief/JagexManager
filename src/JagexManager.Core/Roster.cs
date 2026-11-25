@@ -5,7 +5,7 @@ namespace JagexManager;
 
 public sealed class PlayException(string message) : Exception(message);
 
-public sealed record Outcome(CharacterView Character, Program Program, Exception? Error);
+public sealed record Outcome(CharacterView Character, Program Program, string? Error);
 
 public enum Handover
 {
@@ -238,7 +238,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
                 }
                 catch (Exception e) when (e is PlayException or IOException or UnauthorizedAccessException or Win32Exception)
                 {
-                    outcomes.Add(new Outcome(character, program, e));
+                    outcomes.Add(new Outcome(character, program, e.Message));
                 }
             }
 
@@ -329,7 +329,7 @@ public sealed class Roster(Vault vault, Jagex jagex)
     private static bool Unreachable(Exception e) =>
         e is JagexException or HttpRequestException or TaskCanceledException;
 
-    private static Dictionary<string, T> Kept<T>(
-        IReadOnlyDictionary<string, T> entries, IReadOnlyList<Character> characters) =>
-        entries.Where(entry => characters.Any(c => c.Id == entry.Key)).ToDictionary();
+    private static Dictionary<string, Preference> Kept(
+        IReadOnlyDictionary<string, Preference> preferences, IReadOnlyList<Character> characters) =>
+        preferences.Where(entry => characters.Any(c => c.Id == entry.Key)).ToDictionary();
 }

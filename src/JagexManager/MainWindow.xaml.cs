@@ -425,11 +425,10 @@ public partial class MainWindow : Window
         }
 
         var first = failed[0];
-        var reason = Explain(first.Error!) ?? "It could not be started.";
-        return $"Started {started} of {outcomes.Count} characters on {account.Name}. {first.Character.Name}: {reason}";
+        return $"Started {started} of {outcomes.Count} characters on {account.Name}. {first.Character.Name}: {first.Error}";
     }
 
-    private void RevealHidden(object sender, RoutedEventArgs e)
+    private void ToggleShowHidden(object sender, RoutedEventArgs e)
     {
         var account = (AccountView)((FrameworkElement)sender).DataContext;
         account.ShowHidden = !account.ShowHidden;
@@ -763,7 +762,7 @@ public partial class MainWindow : Window
         _ => null,
     };
 
-    private void Say(string message)
+    public void Say(string message)
     {
         Status.Text = message;
         StatusBar.Visibility = Visibility.Visible;
