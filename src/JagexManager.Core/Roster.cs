@@ -46,7 +46,6 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
     private readonly HashSet<(string Id, DateTimeOffset Ends)> warned = [];
     private bool refreshing;
-    private bool finding;
     private Sort sort;
     private string? search;
 
@@ -240,7 +239,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     public int Import(IReadOnlyDictionary<string, Preference> chosen)
     {
         var matched = Characters.Where(c => chosen.ContainsKey(c.Character.Id)).ToList();
-        Prefer(matched, (c, p) => p.Choose(chosen[c.Character.Id]));
+        Prefer(matched, (c, p) => chosen[c.Character.Id] with { Played = p.Played, Placement = p.Placement, Playtime = p.Playtime });
         return matched.Count;
     }
 
@@ -386,9 +385,9 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
             account.Arrange();
     }
 
-    public IReadOnlyList<CharacterView> Watch()
+    public IReadOnlyList<CharacterView> Sweep()
     {
-        var closed = Characters.Where(c => c.Closed).ToList();
+        var closed = Characters.Where(c => c.Exited).ToList();
         foreach (var character in Characters.Where(c => c.Running).Except(closed))
             character.Watch(KeepPlacement);
 
@@ -406,28 +405,29 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
     public void Record() => Record(Running);
 
-    public async Task FindLevelsAsync(Hiscores hiscores)
+    public async Task FindLevelsAsync(Hiscores hiscores, CancellationToken cancel)
     {
-        if (finding)
-            return;
-
-        finding = true;
-        try
+        var named = Characters.Where(c => c.Character.Name.Length > 0).GroupBy(c => c.Character.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var characters in named)
         {
-            var named = Characters.Where(c => c.Character.Name.Length > 0).GroupBy(c => c.Character.Name, StringComparer.OrdinalIgnoreCase).ToList();
-            foreach (var characters in named)
+            Levels? levels;
+            try
             {
-                var levels = await hiscores.FindAsync(characters.Key);
-                foreach (var character in characters)
-                    character.Levels = levels;
+                levels = await hiscores.FindAsync(characters.Key, cancel);
             }
-        }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
-        {
-        }
-        finally
-        {
-            finding = false;
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                if (cancel.IsCancellationRequested)
+                    return;
+
+                continue;
+            }
+
+            if (cancel.IsCancellationRequested)
+                return;
+
+            foreach (var character in characters)
+                character.Levels = levels;
         }
     }
 
@@ -531,7 +531,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         Quietly(() => Prefer(characters, (c, p) => p with
         {
             Playtime = PlayDay.Add(p.Playtime, c.Since, now),
-            Placement = KeepPlacement && c.Seen is { } seen ? seen : p.Placement,
+            Placement = KeepPlacement && c.LastPlacement is { } last ? last : p.Placement,
         }));
 
         foreach (var character in characters)

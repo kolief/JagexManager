@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace JagexManager;
 
 public sealed record PlayDay(DateOnly Date, int Seconds)
@@ -9,18 +11,22 @@ public sealed record PlayDay(DateOnly Date, int Seconds)
     public static List<PlayDay> Add(IEnumerable<PlayDay> days, DateTimeOffset from, DateTimeOffset to)
     {
         var totals = days.GroupBy(d => d.Date).ToDictionary(g => g.Key, g => g.Sum(d => d.Seconds));
-        var start = from.ToLocalTime().DateTime;
-        var end = to.ToLocalTime().DateTime;
-        while (start < end)
+        var start = from;
+        while (start < to)
         {
-            var midnight = start.Date.AddDays(1);
-            var stop = end < midnight ? end : midnight;
-            var date = DateOnly.FromDateTime(start);
+            var day = start.ToLocalTime().Date;
+            var next = day.AddDays(1);
+            var midnight = new DateTimeOffset(next, TimeZoneInfo.Local.GetUtcOffset(next));
+            var stop = to < midnight ? to : midnight;
+            if (stop <= start)
+                break;
+
+            var date = DateOnly.FromDateTime(day);
             totals[date] = Math.Min(DaySeconds, totals.GetValueOrDefault(date) + (int)(stop - start).TotalSeconds);
             start = stop;
         }
 
-        var oldest = DateOnly.FromDateTime(end).AddDays(1 - Kept);
+        var oldest = DateOnly.FromDateTime(to.ToLocalTime().Date).AddDays(1 - Kept);
         return totals
             .Where(t => t.Key >= oldest && t.Value > 0)
             .OrderBy(t => t.Key)
@@ -28,8 +34,12 @@ public sealed record PlayDay(DateOnly Date, int Seconds)
             .ToList();
     }
 
-    public static TimeSpan Week(IEnumerable<PlayDay> days, DateOnly today) =>
-        TimeSpan.FromSeconds(days.Where(d => d.Date > today.AddDays(-Kept) && d.Date <= today).Sum(d => (long)d.Seconds));
+    public static TimeSpan Week(IEnumerable<PlayDay> days, DateOnly today)
+    {
+        var first = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+        var start = today.AddDays(-(((int)today.DayOfWeek - (int)first + 7) % 7));
+        return TimeSpan.FromSeconds(days.Where(d => d.Date >= start && d.Date <= today).Sum(d => (long)d.Seconds));
+    }
 
     public static string? Text(TimeSpan time) => time.TotalMinutes switch
     {

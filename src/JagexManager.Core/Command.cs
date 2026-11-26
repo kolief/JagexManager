@@ -12,7 +12,7 @@ public enum CommandKind
 public sealed record Command(CommandKind Kind, string? Target = null)
 {
     public const string PlayFlag = "--play";
-    public const string GroupFlag = "--play-group";
+    public const string PlayGroupFlag = "--play-group";
 
     private const int TargetLimit = 256;
 
@@ -21,7 +21,7 @@ public sealed record Command(CommandKind Kind, string? Target = null)
     public string Arguments => Kind switch
     {
         CommandKind.Play => $"{PlayFlag} {Quote(Target ?? "")}",
-        CommandKind.PlayGroup => $"{GroupFlag} {Quote(Target ?? "")}",
+        CommandKind.PlayGroup => $"{PlayGroupFlag} {Quote(Target ?? "")}",
         _ => "",
     };
 
@@ -32,7 +32,7 @@ public sealed record Command(CommandKind Kind, string? Target = null)
             CommandKind? kind = args[position] switch
             {
                 PlayFlag => CommandKind.Play,
-                GroupFlag => CommandKind.PlayGroup,
+                PlayGroupFlag => CommandKind.PlayGroup,
                 _ => null,
             };
 
@@ -48,9 +48,10 @@ public sealed record Command(CommandKind Kind, string? Target = null)
     public static Command? Read(string text)
     {
         var parts = text.Split('\n', 2);
-        if (!Enum.TryParse<CommandKind>(parts[0], out var kind) || !Enum.IsDefined(kind) || parts[0] != kind.ToString())
+        if (!Enum.GetNames<CommandKind>().Contains(parts[0]))
             return null;
 
+        var kind = Enum.Parse<CommandKind>(parts[0]);
         var target = parts.Length > 1 ? Usable(parts[1]) : null;
         return kind == CommandKind.Open || target is not null ? new Command(kind, target) : null;
     }

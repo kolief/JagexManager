@@ -34,6 +34,7 @@ public sealed record Preference(string? Choice = null, string? Nickname = null, 
 
     public IReadOnlyList<PlayDay> Playtime { get; init; } = [];
 
+    [JsonIgnore]
     public bool Fits =>
         (Nickname?.Length ?? 0) <= NicknameLimit
         && (Options?.Length ?? 0) <= OptionsLimit
@@ -49,16 +50,6 @@ public sealed record Preference(string? Choice = null, string? Nickname = null, 
         Groups = Grouped(Groups),
         Placement = Placement is { Normal: { Width: > 0, Height: > 0 } } ? Placement : null,
         Playtime = Days(Playtime),
-    };
-
-    public Preference Choose(Preference chosen) => this with
-    {
-        Choice = chosen.Choice,
-        Nickname = chosen.Nickname,
-        Options = chosen.Options,
-        Hidden = chosen.Hidden,
-        Groups = chosen.Groups,
-        Note = chosen.Note,
     };
 
     public bool InGroup(string name) => Groups.Contains(name, Group.NameComparer);

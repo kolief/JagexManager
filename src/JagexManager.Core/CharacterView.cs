@@ -8,8 +8,10 @@ public sealed class CharacterView : View
 
     private Character character;
     private Client? client;
+    private const int PlaceAttempts = 2;
+
     private bool ready = true;
-    private bool placed;
+    private int placements;
     private Levels? levels;
 
     public CharacterView(AccountView owner, Character character)
@@ -67,7 +69,7 @@ public sealed class CharacterView : View
     {
         get
         {
-            string?[] parts = [levels?.Text, PlayDay.Text(Week) is { } week ? $"{week} in 7 days" : null];
+            string?[] parts = [levels?.Text, PlayDay.Text(Week) is { } week ? $"{week} this week" : null];
             var shown = parts.OfType<string>().ToList();
             return shown.Count > 0 ? string.Join(" · ", shown) : null;
         }
@@ -113,17 +115,17 @@ public sealed class CharacterView : View
 
     public bool Running => client is not null;
 
-    public bool Closed => client is { Running: false };
+    public bool Exited => client is { Running: false };
 
     public bool Crashed => client is { Running: false, Crashed: true };
 
-    public bool Windowed => client?.Windowed ?? false;
+    public bool HasWindow => client?.HasWindow ?? false;
 
     public bool Active => client?.Active ?? false;
 
     public DateTimeOffset Since { get; private set; }
 
-    public Placement? Seen { get; private set; }
+    public Placement? LastPlacement { get; private set; }
 
     public bool Ready
     {
@@ -140,8 +142,8 @@ public sealed class CharacterView : View
     public void Attach(Client started)
     {
         Since = DateTimeOffset.UtcNow;
-        Seen = null;
-        placed = false;
+        LastPlacement = null;
+        placements = 0;
         Set(ref client, started, nameof(Running), nameof(Visible));
     }
 
@@ -149,7 +151,7 @@ public sealed class CharacterView : View
 
     public bool Focus() => client?.Focus() ?? false;
 
-    public bool Restore() => client?.Restore() ?? false;
+    public bool Normalise() => client?.Normalise() ?? false;
 
     public bool Move(Area area) => client?.Move(area) ?? false;
 
@@ -161,17 +163,23 @@ public sealed class CharacterView : View
             return;
 
         client.Watch();
-        if (client.Locate() is not { } current)
-            return;
-
-        if (!placed && place && Preference.Placement is { } saved && saved != current && client.Place(saved))
+        if (!place)
         {
-            placed = true;
+            placements = PlaceAttempts;
             return;
         }
 
-        placed = true;
-        Seen = current;
+        if (client.Locate() is not { } current)
+            return;
+
+        if (placements < PlaceAttempts && Preference.Placement is { } saved && saved != current && client.Place(saved))
+        {
+            placements++;
+            return;
+        }
+
+        placements = PlaceAttempts;
+        LastPlacement = current;
     }
 
     public void Forget()

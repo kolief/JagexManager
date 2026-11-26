@@ -585,10 +585,10 @@
                             <TextBlock Text="Game windows" Style="{StaticResource Heading}" />
                             <CheckBox x:Name="PlacementBox" Content="Open each character's window where it was last time" Click="ChangePlacement"
                                       AutomationProperties.HelpText="Remembers the position and size of each character's game window" />
-                            <CheckBox x:Name="HotkeysBox" Content="Use hotkeys to show game windows" Click="ChangeHotkeys" Margin="0,4,0,0"
+                            <CheckBox x:Name="HotkeysBox" Content="Use hotkeys to bring game windows to the front" Click="ChangeHotkeys" Margin="0,4,0,0"
                                       AutomationProperties.HelpText="{Binding Text, ElementName=HotkeysNote}" />
                             <TextBlock x:Name="HotkeysNote" Margin="0,4,0,0" Style="{StaticResource Note}"
-                                       Text="Ctrl+Alt+1 to 9 show the running characters in list order, and Ctrl+Alt+0 shows the next one. On keyboards with AltGr, these keys stop AltGr typing characters such as { and [." />
+                                       Text="Ctrl+Alt+1 to 9 bring the running characters to the front in list order, and Ctrl+Alt+0 brings the next one. On keyboards with AltGr, these keys stop AltGr typing characters such as { and [." />
                         </StackPanel>
                     </Border>
 

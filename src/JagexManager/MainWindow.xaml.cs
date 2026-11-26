@@ -21,8 +21,6 @@ public partial class MainWindow : Window
 {
     public const int SearchLimit = 50;
 
-    private const string BackupFilter = "JagexManager backup (*.json)|*.json";
-
     private static readonly string SettingsPath = Path.Combine(App.DataFolder, "settings.json");
     private static readonly string FontPath = Path.Combine(App.DataFolder, "fonts", "runescape.ttf");
     private static readonly TimeSpan Fresh = TimeSpan.FromMinutes(5);
@@ -46,6 +44,7 @@ public partial class MainWindow : Window
     private DateTimeOffset refreshed;
     private Release? update;
     private Action? suggested;
+    private CancellationTokenSource? finding;
 
     private AccountView? dragged;
     private bool moved;
@@ -54,7 +53,7 @@ public partial class MainWindow : Window
     {
         roster = new Roster(vault, jagex);
         tray = new Tray(this, Restore, Close, TrayItems);
-        hotkeys = new Hotkeys(ShowNumbered);
+        hotkeys = new Hotkeys(FocusNumbered);
         InitializeComponent();
 
         Title = $"JagexManager {typeof(App).Assembly.GetName().Version?.ToString(3)}";
@@ -72,8 +71,9 @@ public partial class MainWindow : Window
 
         watch.Tick += (_, _) =>
         {
-            foreach (var character in roster.Watch())
-                OfferRestart(character);
+            var crashed = roster.Sweep();
+            foreach (var character in crashed)
+                SuggestRestart(character);
         };
         watch.Start();
         record.Tick += (_, _) => roster.Record();
@@ -166,8 +166,21 @@ public partial class MainWindow : Window
 
     private async Task FindLevelsAsync()
     {
-        if (settings.ShowLevels)
-            await roster.FindLevelsAsync(hiscores);
+        finding?.Cancel();
+        if (!settings.ShowLevels)
+            return;
+
+        using var search = new CancellationTokenSource();
+        finding = search;
+        try
+        {
+            await roster.FindLevelsAsync(hiscores, search.Token);
+        }
+        finally
+        {
+            if (finding == search)
+                finding = null;
+        }
     }
 
     private void Rest()
@@ -694,65 +707,14 @@ public partial class MainWindow : Window
         using var explorer = Process.Start(new ProcessStartInfo(App.DataFolder + Path.DirectorySeparatorChar) { UseShellExecute = true });
     });
 
-    private void Export(object sender, RoutedEventArgs e)
-    {
-        var dialog = new SaveFileDialog
-        {
-            Title = "Export settings",
-            Filter = BackupFilter,
-            FileName = "JagexManager backup.json",
-        };
-
-        if (dialog.ShowDialog(this) == true
-            && Try(() => File.WriteAllText(dialog.FileName, Backup.Write(settings, roster.Accounts.Select(a => a.Account)))))
-            Say($"Exported your settings to {Path.GetFileName(dialog.FileName)}. Sign-ins are not in it.");
-    }
-
-    private void Import(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFileDialog
-        {
-            Title = "Import settings",
-            Filter = BackupFilter,
-            CheckFileExists = true,
-        };
-
-        Restored? restored = null;
-        if (dialog.ShowDialog(this) != true || !Try(() => restored = Backup.Load(dialog.FileName)) || restored is null)
-            return;
-
-        var added = restored.Settings.Custom.Where(p => !settings.Custom.Contains(p)).Select(p => $"\n{p.Path}").ToList();
-        var question = "Replace your settings, and the choices for each character in the file, with the ones from it?"
-            + "\n\nOnly import a file you made yourself: it can change which programs Play starts and the options they start with.";
-        if (added.Count > 0)
-            question += $"\n\nIt adds these clients:{string.Concat(added)}";
-
-        if (!Confirm(question, "Import settings"))
-            return;
-
-        Change(restored.Settings);
-        var applied = 0;
-        if (!Try(() =>
-        {
-            applied = roster.Import(restored.Characters);
-            roster.Prune(settings.Names);
-        }))
-            return;
-
-        var missing = restored.Characters.Count - applied;
-        Say(missing switch
-        {
-            0 => "Imported your settings.",
-            1 => "Imported your settings. 1 character in the file is not here yet, so sign in to its account and import again.",
-            _ => $"Imported your settings. {missing} characters in the file are not here yet, so sign in to their accounts and import again.",
-        });
-    }
-
     private void Change(Settings changed)
     {
-        if (changed.UseGameFont != gameFont)
+        if (changed.UseGameFont != settings.UseGameFont && changed.UseGameFont != gameFont)
         {
             ShowFont(changed.UseGameFont);
+            if (gameFont != changed.UseGameFont)
+                Say("The RuneScape font could not be copied from RuneLite, so the default font is used.");
+
             changed = changed with { UseGameFont = gameFont };
         }
 
@@ -772,10 +734,12 @@ public partial class MainWindow : Window
         if (settings.UseHotkeys != previous.UseHotkeys)
             ApplyHotkeys();
 
-        if (settings.ShowLevels && !previous.ShowLevels)
+        if (settings.ShowLevels != previous.ShowLevels)
+        {
             _ = FindLevelsAsync();
-        else if (!settings.ShowLevels && previous.ShowLevels)
-            roster.ForgetLevels();
+            if (!settings.ShowLevels)
+                roster.ForgetLevels();
+        }
 
         Try(() => settings.Save(SettingsPath));
     }
@@ -869,15 +833,11 @@ public partial class MainWindow : Window
         _ => null,
     };
 
-    public void Say(string message) => Report(message, null, null);
-
-    private void Suggest(string message, string label, Action act) => Report(message, label, act);
-
-    private void Report(string message, string? label, Action? act)
+    public void Say(string message, string? action = null, Action? act = null)
     {
         Status.Text = message;
         suggested = act;
-        StatusAction.Content = label;
+        StatusAction.Content = action;
         StatusAction.Visibility = act is null ? Visibility.Collapsed : Visibility.Visible;
         StatusBar.Visibility = Visibility.Visible;
 
@@ -900,6 +860,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        closed = true;
+        finding?.Cancel();
         watch.Stop();
         freshen.Stop();
         record.Stop();

@@ -30,7 +30,7 @@ public sealed class AccountView : View
     };
 
     public string Summary =>
-        PlayDay.Text(TimeSpan.FromTicks(Characters.Sum(c => c.Week.Ticks))) is { } week ? $"{Tally} · {week} in 7 days" : Tally;
+        PlayDay.Text(TimeSpan.FromTicks(Characters.Sum(c => c.Week.Ticks))) is { } week ? $"{Tally} · {week} this week" : Tally;
 
     public IReadOnlyList<CharacterView> Playable => Characters.Where(c => !c.Hidden && c.Visible && !c.Running && c.Ready).ToList();
 

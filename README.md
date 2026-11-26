@@ -30,8 +30,9 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
 - Search your characters, see when each was last played, and sort by it. The
   order catches up while JagexManager is minimised, so rows never move under
   your mouse.
-- See how long each character has played in the last 7 days, and its combat
-  and total level from the Old School hiscores.
+- See how long each character has played this week, starting from the first
+  day of the week where you live, and its combat and total level from the Old
+  School hiscores.
 - See whether each character is P2P, with the days of membership left, or F2P.
   The days turn amber in the last three days of a membership that does not
   renew. JagexManager also warns you about each one once while it runs.
@@ -71,8 +72,10 @@ Windows 10 or 11 with RuneLite or the Jagex Launcher installed.
    **Open in the Jagex Launcher** icon on that account. If the launcher is
    already open, it is closed and reopened.
 9. Right-click JagexManager on the taskbar to start a group or a recently
-   played character. Desktop shortcuts and these entries stop working if you
-   move `JagexManager.exe`.
+   played character. These entries and desktop shortcuts start JagexManager
+   minimised if it is not running. They stop working if you move
+   `JagexManager.exe`, and a group's shortcut stops working if you rename the
+   group.
 10. To use a character in another program, right-click it and choose
     **Copy session details**. This copies its `JX_SESSION_ID`,
     `JX_CHARACTER_ID` and `JX_DISPLAY_NAME`. Anyone with these can play as that
@@ -100,16 +103,18 @@ first, then import. Only import files you made yourself, because they can
 change which programs **Play** starts and the options they start with.
 
 With **Minimise to the notification area** on, right-click the icon there to
-start a character or group without opening the window. Click a running
-character there to bring its window to the front. Membership warnings appear
+start a character or group without opening the window, arrange the game
+windows, or stop every client. Click a running character there to bring its
+window to the front. Membership warnings appear
 as a notification from that icon, or under the list when the window is open.
 
 Accounts are checked again when you come back to JagexManager after five
 minutes, and every hour while it is open, so new characters and membership days
 stay current.
 
-With **Show levels from the Old School hiscores** on, JagexManager looks up each
-character's name on Jagex's public hiscores when it starts and every hour.
+**Show levels from the Old School hiscores** is on at first. While it is on,
+JagexManager looks up each character's name on Jagex's public hiscores when it
+starts and every hour.
 
 JagexManager asks GitHub for the latest release each time it starts and shows a
 notice when there is a newer one. It never downloads anything by itself. Turn

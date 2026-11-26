@@ -84,7 +84,7 @@ public sealed class Client : IDisposable
         }
     }
 
-    public bool Windowed => Game() is not null;
+    public bool HasWindow => Game() is not null;
 
     public bool Active =>
         GetWindowThreadProcessId(GetForegroundWindow(), out var process) != 0 && Processes().Contains(process);
@@ -103,16 +103,16 @@ public sealed class Client : IDisposable
                 continue;
 
             var process = OpenProcess(QueryLimited, false, id);
-            if (process.IsInvalid)
-                process.Dispose();
-            else
+            if (!process.IsInvalid && IsProcessInJob(process, job, out var inJob) && inJob)
                 processes[id] = process;
+            else
+                process.Dispose();
         }
     }
 
     public bool Focus()
     {
-        var window = Windows().OrderByDescending(Size).FirstOrDefault();
+        var window = Game()?.Window ?? Windows().OrderByDescending(Size).FirstOrDefault();
         if (window == 0)
             return false;
 
@@ -134,13 +134,13 @@ public sealed class Client : IDisposable
             return false;
 
         var target = game.Placement;
-        target.Flags = 0;
+        target.Flags = AsyncPlacement;
         target.ShowCommand = placement.Maximised ? ShowMaximized : ShowNoActivate;
         target.Normal = Bounds.Of(placement.Normal);
         return SetWindowPlacement(game.Window, ref target);
     }
 
-    public bool Restore() =>
+    public bool Normalise() =>
         Game() is { } game
         && (IsIconic(game.Window) || IsZoomed(game.Window))
         && ShowWindowAsync(game.Window, RestoreCommand);
@@ -254,6 +254,7 @@ public sealed class Client : IDisposable
     private const int ShowNoActivate = 4;
     private const int RestoreCommand = 9;
     private const int RestoreToMaximized = 2;
+    private const int AsyncPlacement = 4;
     private const int ExtendedFrameBounds = 9;
     private const uint NoZOrder = 0x0004;
     private const uint NoActivate = 0x0010;
@@ -316,6 +317,10 @@ public sealed class Client : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern SafeProcessHandle OpenProcess(int access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsProcessInJob(SafeProcessHandle process, SafeFileHandle job, [MarshalAs(UnmanagedType.Bool)] out bool result);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

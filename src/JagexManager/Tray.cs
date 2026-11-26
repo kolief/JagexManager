@@ -11,8 +11,6 @@ public sealed class Tray : IDisposable
     private const int Callback = 0x8001;
     private const int LeftUp = 0x0202;
     private const int RightUp = 0x0205;
-    private const int BalloonHidden = 0x0403;
-    private const int BalloonTimeout = 0x0404;
     private const int BalloonClick = 0x0405;
     private const int Add = 0;
     private const int Modify = 1;
@@ -117,10 +115,6 @@ public sealed class Tray : IDisposable
             var click = clicked ?? open;
             clicked = null;
             click();
-        }
-        else if (message == Callback && (int)lParam is BalloonHidden or BalloonTimeout)
-        {
-            clicked = null;
         }
         else if (message == Callback && (int)lParam == LeftUp)
         {

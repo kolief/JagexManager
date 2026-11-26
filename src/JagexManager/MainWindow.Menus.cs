@@ -244,7 +244,7 @@ public partial class MainWindow
         if (!Try(() => members = roster.DeleteGroup(group.Name)))
             return;
 
-        Suggest($"Deleted {group.Name}. Its characters are still on their accounts.", "Undo", () =>
+        Say($"Deleted {group.Name}. Its characters are still on their accounts.", "Undo", () =>
         {
             if (Try(() => roster.Join(members, group.Name)))
                 Say($"{group.Name} is back.");

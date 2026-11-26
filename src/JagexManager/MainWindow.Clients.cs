@@ -1,78 +1,11 @@
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Shell;
 
 namespace JagexManager;
 
 public partial class MainWindow
 {
-    private static readonly TimeSpan RestoreWait = TimeSpan.FromMilliseconds(300);
-
-    private Command? waiting;
-    private bool opened;
-    private string? jumps;
-
-    public void Act(Command command)
-    {
-        if (opened)
-            _ = ActAsync(command);
-        else
-            waiting = command;
-    }
-
-    private void Opened()
-    {
-        opened = true;
-        ShowJumps();
-        ApplyHotkeys();
-        if (waiting is { } command)
-        {
-            waiting = null;
-            _ = ActAsync(command);
-        }
-    }
-
-    private async Task ActAsync(Command command)
-    {
-        switch (command)
-        {
-            case { Kind: CommandKind.Play, Target: { } target }:
-                if (roster.Find(target) is not { } character)
-                {
-                    Restore();
-                    Say($"No character called {target} was found.");
-                }
-                else if (!character.Running)
-                {
-                    await FromTrayAsync(PlayAsync(character));
-                }
-                else if (!FocusClient(character))
-                {
-                    Restore();
-                }
-
-                break;
-
-            case { Kind: CommandKind.PlayGroup, Target: { } name }:
-                if (roster.FindGroup(name) is { } group)
-                {
-                    await FromTrayAsync(PlayGroupAsync(group));
-                }
-                else
-                {
-                    Restore();
-                    Say($"No group called {name} was found.");
-                }
-
-                break;
-
-            default:
-                Restore();
-                break;
-        }
-    }
+    private static readonly TimeSpan SettleWait = TimeSpan.FromMilliseconds(300);
 
     private void OfferWindows(object sender, RoutedEventArgs e)
     {
@@ -96,21 +29,32 @@ public partial class MainWindow
 
     private async Task TileAsync()
     {
-        var shown = roster.Running.Where(c => c.Windowed).ToList();
+        var shown = roster.Running.Where(c => c.HasWindow).ToList();
         if (shown.Count == 0)
         {
             Say("No game windows are open yet.");
             return;
         }
 
-        var restored = false;
+        var normalised = false;
         foreach (var character in shown)
-            restored |= character.Restore();
+            normalised |= character.Normalise();
 
-        if (restored)
-            await Task.Delay(RestoreWait);
+        if (normalised)
+            await Task.Delay(SettleWait);
 
-        var tiles = Tiles.Lay(shown.Count, Screens.Work());
+        var tiles = Tiles.Lay(shown.Count, Screens.WorkAreas());
+        var moved = Move(shown, tiles);
+        await Task.Delay(SettleWait);
+        moved = Math.Max(moved, Move(shown, tiles));
+
+        Say(moved == shown.Count
+            ? moved == 1 ? "Arranged the game window." : $"Arranged {moved} game windows."
+            : $"Arranged {moved} of {shown.Count} game windows.");
+    }
+
+    private static int Move(IEnumerable<CharacterView> shown, IReadOnlyList<Area> tiles)
+    {
         var moved = 0;
         foreach (var (character, tile) in shown.Zip(tiles))
         {
@@ -118,9 +62,7 @@ public partial class MainWindow
                 moved++;
         }
 
-        Say(moved == shown.Count
-            ? moved == 1 ? "Arranged the game window." : $"Arranged {moved} game windows."
-            : $"Arranged {moved} of {shown.Count} game windows.");
+        return moved;
     }
 
     private void StopAll(IReadOnlyList<CharacterView> running, Group? group)
@@ -146,7 +88,7 @@ public partial class MainWindow
         Say(running.Count == 1 ? $"Stopping {running[0].Name}." : $"Stopping {running.Count} clients.");
     }
 
-    private void OfferRestart(CharacterView character)
+    private void SuggestRestart(CharacterView character)
     {
         var message = $"{character.Name} closed unexpectedly.";
 
@@ -155,7 +97,7 @@ public partial class MainWindow
         if (!IsVisible && tray.Tell("Game closed", $"{message} Click here to start it again.", Again))
             return;
 
-        Suggest(message, "Start again", Again);
+        Say(message, "Start again", Again);
     }
 
     private void ApplyHotkeys()
@@ -176,7 +118,7 @@ public partial class MainWindow
         }
     }
 
-    private void ShowNumbered(int number)
+    private void FocusNumbered(int number)
     {
         var running = roster.Running;
         var target = number == Hotkeys.Next ? Next(running) : number <= running.Count ? running[number - 1] : null;
@@ -185,60 +127,12 @@ public partial class MainWindow
 
     private static CharacterView? Next(IReadOnlyList<CharacterView> running)
     {
-        if (running.Count == 0)
-            return null;
-
-        var current = running.ToList().FindIndex(c => c.Active);
-        return running[(current + 1) % running.Count];
-    }
-
-    private void ShowJumps()
-    {
-        if (Environment.ProcessPath is not { } program)
-            return;
-
-        var entries = roster.Groups
-            .Select(g => Entry(program, $"Play {g.Name}", new Command(CommandKind.PlayGroup, g.Name), "Groups"))
-            .Concat(roster.Recent.Select(c => Entry(program, $"Play {c.Name}", new Command(CommandKind.Play, c.Character.Id), "Recently played")))
-            .ToList();
-
-        var shown = string.Join('\n', entries.Select(e => $"{e.CustomCategory}\t{e.Title}\t{e.Arguments}"));
-        if (shown == jumps)
-            return;
-
-        jumps = shown;
-        var list = new JumpList(entries, showFrequent: false, showRecent: false);
-        JumpList.SetJumpList(Application.Current, list);
-        list.Apply();
-    }
-
-    private static JumpTask Entry(string program, string title, Command command, string category) => new()
-    {
-        Title = title,
-        Description = title,
-        Arguments = command.Arguments,
-        ApplicationPath = program,
-        IconResourcePath = program,
-        CustomCategory = category,
-    };
-
-    private void CreateShortcut(string name, Command command)
-    {
-        if (Environment.ProcessPath is not { } program)
+        for (var position = 0; position < running.Count; position++)
         {
-            Say("JagexManager could not find its own program file, so it cannot make a shortcut.");
-            return;
+            if (running[position].Active)
+                return running[(position + 1) % running.Count];
         }
 
-        try
-        {
-            var path = Shortcut.Create(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                $"Play {name}", program, command.Arguments, $"Play {name} with JagexManager");
-            Say($"Added {Path.GetFileNameWithoutExtension(path)} to your desktop. It stops working if you move JagexManager.exe.");
-        }
-        catch (Exception e) when (e is COMException or IOException or UnauthorizedAccessException)
-        {
-            Say("The shortcut could not be added to your desktop.");
-        }
+        return running.Count > 0 ? running[0] : null;
     }
 }

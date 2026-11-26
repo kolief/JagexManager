@@ -1,13 +1,16 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace JagexManager;
 
 public sealed class Relay : IDisposable
 {
     private const int MessageLimit = 1024;
+    private const int Instances = 2;
 
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan Retry = TimeSpan.FromSeconds(1);
@@ -24,6 +27,9 @@ public sealed class Relay : IDisposable
         {
             using var client = new NamedPipeClientStream(".", pipe, PipeDirection.Out, PipeOptions.CurrentUserOnly);
             client.Connect(Patience);
+            if (GetNamedPipeServerProcessId(client.SafePipeHandle, out var server))
+                _ = AllowSetForegroundWindow(server);
+
             client.Write(Encoding.UTF8.GetBytes(command.Write()));
             client.Flush();
             return true;
@@ -38,39 +44,52 @@ public sealed class Relay : IDisposable
 
     private async Task ListenAsync(string pipe, Action<Command> heard)
     {
-        while (!stop.IsCancellationRequested)
+        NamedPipeServerStream? next = null;
+        try
         {
-            try
-            {
-                await using var server = new NamedPipeServerStream(pipe, PipeDirection.In, 1, PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-                await server.WaitForConnectionAsync(stop.Token);
-
-                using var reading = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
-                reading.CancelAfter(Patience);
-                if (Command.Read(await ReadAsync(server, reading.Token)) is { } command)
-                    heard(command);
-            }
-            catch (OperationCanceledException) when (stop.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            while (!stop.IsCancellationRequested)
             {
                 try
                 {
-                    await Task.Delay(Retry, stop.Token);
+                    next ??= Open(pipe);
+                    await next.WaitForConnectionAsync(stop.Token);
+                    await using var connected = next;
+                    next = null;
+                    next = Open(pipe);
+
+                    using var reading = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+                    reading.CancelAfter(Patience);
+                    if (Command.Read(await ReadAsync(connected, reading.Token)) is { } command)
+                        heard(command);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (stop.IsCancellationRequested)
                 {
                     return;
                 }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    try
+                    {
+                        await Task.Delay(Retry, stop.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                }
             }
         }
+        finally
+        {
+            next?.Dispose();
+        }
     }
+
+    private static NamedPipeServerStream Open(string pipe) =>
+        new(pipe, PipeDirection.In, Instances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
     private static async Task<string> ReadAsync(Stream server, CancellationToken cancel)
     {
@@ -89,4 +108,12 @@ public sealed class Relay : IDisposable
         using var user = WindowsIdentity.GetCurrent();
         return $"JagexManager.{user.User?.Value}.{self.SessionId}";
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint process);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AllowSetForegroundWindow(uint process);
 }

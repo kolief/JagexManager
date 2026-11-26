@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -17,8 +16,6 @@ public partial class App : Application
     {
         Source = new Uri("/JagexManager;component/RuneLite.xaml", UriKind.Relative),
     };
-
-    private const int AnyProcess = -1;
 
     private static Mutex? instance;
 
@@ -74,7 +71,6 @@ public partial class App : Application
 
     private static void WakeRunning(Command command)
     {
-        _ = AllowSetForegroundWindow(AnyProcess);
         if (!Relay.Send(Relay.Pipe, command))
             MessageBox.Show("JagexManager is already running.", "JagexManager", MessageBoxButton.OK, MessageBoxImage.Information);
     }
@@ -84,10 +80,6 @@ public partial class App : Application
         if (e.PropertyName == nameof(SystemParameters.HighContrast))
             Show(theme);
     }
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AllowSetForegroundWindow(int process);
 
     private void Report(object sender, DispatcherUnhandledExceptionEventArgs e)
     {

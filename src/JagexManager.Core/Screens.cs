@@ -6,7 +6,7 @@ public static class Screens
 {
     private const int PrimaryFlag = 1;
 
-    public static IReadOnlyList<Area> Work()
+    public static IReadOnlyList<Area> WorkAreas()
     {
         var found = new List<(Area Work, bool Primary)>();
         _ = EnumDisplayMonitors(0, 0, (monitor, _, _, _) =>
