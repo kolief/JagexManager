@@ -21,6 +21,8 @@ public partial class MainWindow : Window
 {
     public const int SearchLimit = 50;
 
+    private const string FontMissing = "The RuneScape font could not be copied from RuneLite, so the default font is used.";
+
     private static readonly string SettingsPath = Path.Combine(App.DataFolder, "settings.json");
     private static readonly string FontPath = Path.Combine(App.DataFolder, "fonts", "runescape.ttf");
     private static readonly TimeSpan Fresh = TimeSpan.FromMinutes(5);
@@ -659,7 +661,7 @@ public partial class MainWindow : Window
         if (gameFont == wanted)
             Change(settings with { UseGameFont = wanted });
         else
-            Say("The RuneScape font could not be copied from RuneLite, so the default font is used.");
+            Say(FontMissing);
 
         ShowSettings();
     }
@@ -713,7 +715,7 @@ public partial class MainWindow : Window
         {
             ShowFont(changed.UseGameFont);
             if (gameFont != changed.UseGameFont)
-                Say("The RuneScape font could not be copied from RuneLite, so the default font is used.");
+                Say(FontMissing);
 
             changed = changed with { UseGameFont = gameFont };
         }

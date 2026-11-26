@@ -49,9 +49,7 @@ public partial class MainWindow
             return;
 
         Change(backup.Settings);
-        var font = backup.Settings.UseGameFont && !settings.UseGameFont
-            ? " The RuneScape font could not be copied from RuneLite, so the default font is used."
-            : "";
+        var font = backup.Settings.UseGameFont && !settings.UseGameFont ? $" {FontMissing}" : "";
         var applied = 0;
         if (!Try(() =>
         {
@@ -75,26 +73,30 @@ public partial class MainWindow
         if (backup.Settings.Default != settings.Default)
             changes.Add($"Play starts {backup.Settings.Default} unless a character has its own client");
 
-        var characters = backup.Characters
-            .Select(c => (Character: roster.Find(c.Key), Preference: c.Value, Id: c.Key))
-            .Where(c => c.Character?.Character.Id == c.Id)
-            .ToList();
+        var characters = new List<(CharacterView View, Preference Preference)>();
+        foreach (var (id, preference) in backup.Characters)
+        {
+            if (roster.Find(id) is { } view && view.Character.Id == id)
+                characters.Add((view, preference));
+        }
 
+        var offered = backup.Settings.Names.ToHashSet();
         changes.AddRange(characters
-            .Where(c => c.Preference.Choice is { } choice && choice != c.Character!.Choice)
-            .Select(c => $"{c.Character!.Name} plays in {c.Preference.Choice}"));
+            .Where(c => c.Preference.Choice is { } choice && offered.Contains(choice) && choice != c.View.Choice)
+            .Select(c => $"{c.View.Name} plays in {c.Preference.Choice}"));
 
+        var kept = settings.Custom.Select(p => p.Name).ToHashSet();
         changes.AddRange(backup.Settings.Custom
             .Where(p => !settings.Custom.Contains(p))
-            .Select(p => settings.Removable(p.Name) ? $"Client {p.Name} changes to {p.Path}" : $"New client {p.Name}: {p.Path}"));
+            .Select(p => kept.Contains(p.Name) ? $"Client {p.Name} changes to {p.Path}" : $"New client {p.Name}: {p.Path}"));
 
         changes.AddRange(backup.Settings.Options
             .Where(o => settings.Options.GetValueOrDefault(o.Key) != o.Value)
             .Select(o => $"{o.Key}: {o.Value}"));
 
         changes.AddRange(characters
-            .Where(c => c.Preference.Options is { } options && options != c.Character!.Options)
-            .Select(c => $"{c.Character!.Name}: {c.Preference.Options}"));
+            .Where(c => c.Preference.Options is { } options && options != c.View.Options)
+            .Select(c => $"{c.View.Name}: {c.Preference.Options}"));
 
         return changes;
     }

@@ -74,7 +74,8 @@ public sealed record Backup(Settings Settings, IReadOnlyDictionary<string, Prefe
                         && entry.Value.ValueKind == JsonValueKind.Object
                         && entry.Value.Deserialize<Entry>()?.Preference is { Fits: true } preference
                         && preference != Preference.None
-                        && new[] { preference.Nickname, preference.Options, preference.Note }.Concat(preference.Groups).All(Plain))
+                        && (preference.Choice?.Length ?? 0) <= NameLimit
+                        && new[] { preference.Choice, preference.Nickname, preference.Options, preference.Note }.Concat(preference.Groups).All(Plain))
                         characters[entry.Name] = preference;
                 }
             }
