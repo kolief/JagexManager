@@ -833,11 +833,11 @@ public partial class MainWindow : Window
         _ => null,
     };
 
-    public void Say(string message, string? action = null, Action? act = null)
+    public void Say(string message, string? label = null, Action? act = null)
     {
         Status.Text = message;
         suggested = act;
-        StatusAction.Content = action;
+        StatusAction.Content = label;
         StatusAction.Visibility = act is null ? Visibility.Collapsed : Visibility.Visible;
         StatusBar.Visibility = Visibility.Visible;
 

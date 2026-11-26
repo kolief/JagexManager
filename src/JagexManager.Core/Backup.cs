@@ -12,6 +12,8 @@ public sealed record Backup(Settings Settings, IReadOnlyDictionary<string, Prefe
 
     private const string Marker = "JagexManager";
     private const int Version = 1;
+    private const int NameLimit = 100;
+    private const int PathLimit = 1000;
 
     public static string Write(Settings settings, IEnumerable<Account> accounts)
     {
@@ -36,15 +38,11 @@ public sealed record Backup(Settings Settings, IReadOnlyDictionary<string, Prefe
     {
         using var file = File.OpenRead(path);
         var buffer = new byte[SizeLimit + 1];
-        var length = 0;
-        int read;
-        while (length < buffer.Length && (read = file.Read(buffer, length, buffer.Length - length)) > 0)
-            length += read;
-
+        var length = file.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
         if (length > SizeLimit)
             throw Unreadable();
 
-        return Read(Encoding.UTF8.GetString(buffer, 0, length).TrimStart('﻿'));
+        return Read(Encoding.UTF8.GetString(buffer, 0, length).TrimStart('\uFEFF'));
     }
 
     public static Backup Read(string json)
@@ -63,7 +61,7 @@ public sealed record Backup(Settings Settings, IReadOnlyDictionary<string, Prefe
                 throw Unreadable();
 
             var settings = Settings.Read(saved);
-            if (!settings.Custom.All(p => Plain(p.Name) && Plain(p.Path))
+            if (!settings.Custom.All(p => p.Name.Length <= NameLimit && p.Path.Length <= PathLimit && Plain(p.Name) && Plain(p.Path))
                 || !settings.Options.Values.All(o => o.Length <= Preference.OptionsLimit && Plain(o)))
                 throw Unreadable();
 
@@ -90,7 +88,8 @@ public sealed record Backup(Settings Settings, IReadOnlyDictionary<string, Prefe
     }
 
     private static bool Plain(string? text) =>
-        text is null || !text.Any(c => char.IsControl(c) || char.GetUnicodeCategory(c) == UnicodeCategory.Format);
+        text is null || !text.Any(c => char.IsControl(c)
+            || char.GetUnicodeCategory(c) is UnicodeCategory.Format or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator);
 
     private static InvalidDataException Unreadable() => new("This file is not a JagexManager backup, or it is damaged.");
 

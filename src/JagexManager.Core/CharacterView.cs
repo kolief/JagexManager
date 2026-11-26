@@ -6,12 +6,12 @@ public sealed class CharacterView : View
 {
     public static readonly TimeSpan LapseWarning = TimeSpan.FromDays(3);
 
+    private const int PlaceTries = 2;
+
     private Character character;
     private Client? client;
-    private const int PlaceAttempts = 2;
-
     private bool ready = true;
-    private int placements;
+    private int placeTries;
     private Levels? levels;
 
     public CharacterView(AccountView owner, Character character)
@@ -143,7 +143,7 @@ public sealed class CharacterView : View
     {
         Since = DateTimeOffset.UtcNow;
         LastPlacement = null;
-        placements = 0;
+        placeTries = 0;
         Set(ref client, started, nameof(Running), nameof(Visible));
     }
 
@@ -165,20 +165,20 @@ public sealed class CharacterView : View
         client.Watch();
         if (!place)
         {
-            placements = PlaceAttempts;
+            placeTries = PlaceTries;
             return;
         }
 
         if (client.Locate() is not { } current)
             return;
 
-        if (placements < PlaceAttempts && Preference.Placement is { } saved && saved != current && client.Place(saved))
+        if (placeTries < PlaceTries && Preference.Placement is { } saved && saved != current && client.Place(saved))
         {
-            placements++;
+            placeTries++;
             return;
         }
 
-        placements = PlaceAttempts;
+        placeTries = PlaceTries;
         LastPlacement = current;
     }
 

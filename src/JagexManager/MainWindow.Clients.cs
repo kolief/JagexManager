@@ -94,10 +94,9 @@ public partial class MainWindow
 
         void Again() => _ = FromTrayAsync(PlayAsync(character));
 
-        if (!IsVisible && tray.Tell("Game closed", $"{message} Click here to start it again.", Again))
-            return;
-
         Say(message, "Start again", Again);
+        if (!IsVisible)
+            _ = tray.Tell("Game closed", $"{message} Click here to start it again.", Again);
     }
 
     private void ApplyHotkeys()

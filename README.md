@@ -31,8 +31,8 @@ in the same way the Jagex Launcher does, which Jagex could change at any time.
   order catches up while JagexManager is minimised, so rows never move under
   your mouse.
 - See how long each character has played this week, starting from the first
-  day of the week where you live, and its combat and total level from the Old
-  School hiscores.
+  day of the week in your Windows region settings, and its combat and total
+  level from the Old School hiscores.
 - See whether each character is P2P, with the days of membership left, or F2P.
   The days turn amber in the last three days of a membership that does not
   renew. JagexManager also warns you about each one once while it runs.

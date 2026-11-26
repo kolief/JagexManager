@@ -49,6 +49,9 @@ public partial class MainWindow
             return;
 
         Change(backup.Settings);
+        var font = backup.Settings.UseGameFont && !settings.UseGameFont
+            ? " The RuneScape font could not be copied from RuneLite, so the default font is used."
+            : "";
         var applied = 0;
         if (!Try(() =>
         {
@@ -63,27 +66,35 @@ public partial class MainWindow
             0 => "Imported your settings.",
             1 => "Imported your settings. 1 character in the file is not here yet, so sign in to its account and import again.",
             _ => $"Imported your settings. {missing} characters in the file are not here yet, so sign in to their accounts and import again.",
-        });
+        } + font);
     }
 
     private List<string> Changes(Backup backup)
     {
-        var changes = backup.Settings.Custom
-            .Where(p => !settings.Custom.Contains(p))
-            .Select(p => $"New client {p.Name}: {p.Path}")
-            .Concat(backup.Settings.Options
-                .Where(o => settings.Options.GetValueOrDefault(o.Key) != o.Value)
-                .Select(o => $"{o.Key}: {o.Value}"))
+        var changes = new List<string>();
+        if (backup.Settings.Default != settings.Default)
+            changes.Add($"Play starts {backup.Settings.Default} unless a character has its own client");
+
+        var characters = backup.Characters
+            .Select(c => (Character: roster.Find(c.Key), Preference: c.Value, Id: c.Key))
+            .Where(c => c.Character?.Character.Id == c.Id)
             .ToList();
 
-        foreach (var (id, preference) in backup.Characters)
-        {
-            if (preference.Options is { } options
-                && roster.Find(id) is { } character
-                && character.Character.Id == id
-                && character.Options != options)
-                changes.Add($"{character.Name}: {options}");
-        }
+        changes.AddRange(characters
+            .Where(c => c.Preference.Choice is { } choice && choice != c.Character!.Choice)
+            .Select(c => $"{c.Character!.Name} plays in {c.Preference.Choice}"));
+
+        changes.AddRange(backup.Settings.Custom
+            .Where(p => !settings.Custom.Contains(p))
+            .Select(p => settings.Removable(p.Name) ? $"Client {p.Name} changes to {p.Path}" : $"New client {p.Name}: {p.Path}"));
+
+        changes.AddRange(backup.Settings.Options
+            .Where(o => settings.Options.GetValueOrDefault(o.Key) != o.Value)
+            .Select(o => $"{o.Key}: {o.Value}"));
+
+        changes.AddRange(characters
+            .Where(c => c.Preference.Options is { } options && options != c.Character!.Options)
+            .Select(c => $"{c.Character!.Name}: {c.Preference.Options}"));
 
         return changes;
     }

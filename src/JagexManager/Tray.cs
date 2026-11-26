@@ -75,6 +75,7 @@ public sealed class Tray : IDisposable
     public void Hide()
     {
         wanted = false;
+        clicked = null;
         _ = Notify(Delete);
         shown = false;
     }

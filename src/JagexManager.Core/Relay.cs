@@ -51,10 +51,10 @@ public sealed class Relay : IDisposable
             {
                 try
                 {
-                    next ??= Open(pipe);
-                    await next.WaitForConnectionAsync(stop.Token);
-                    await using var connected = next;
+                    var waiting = next ??= Open(pipe);
+                    await waiting.WaitForConnectionAsync(stop.Token);
                     next = null;
+                    await using var connected = waiting;
                     next = Open(pipe);
 
                     using var reading = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
@@ -71,6 +71,8 @@ public sealed class Relay : IDisposable
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
+                    next?.Dispose();
+                    next = null;
                     try
                     {
                         await Task.Delay(Retry, stop.Token);
