@@ -171,7 +171,11 @@
         <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Padding="20,8" BorderThickness="0,1,0,0" Visibility="Collapsed"
                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-            <TextBlock x:Name="Status" Style="{StaticResource Note}" AutomationProperties.LiveSetting="Polite" />
+            <DockPanel>
+                <Button x:Name="StatusAction" DockPanel.Dock="Right" Click="TakeSuggestion" Margin="12,0,0,0" Style="{StaticResource Link}"
+                        VerticalAlignment="Center" Visibility="Collapsed" />
+                <TextBlock x:Name="Status" Style="{StaticResource Note}" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+            </DockPanel>
         </Border>
 
         <Border x:Name="UpdateBar" DockPanel.Dock="Bottom" Padding="20,8" BorderThickness="0,1,0,0" Visibility="Collapsed"
@@ -192,9 +196,16 @@
                 <RadioButton x:Name="AccountsTab" Content="Accounts" Style="{StaticResource Tab}" IsChecked="True" />
                 <RadioButton x:Name="SettingsTab" Content="Settings" Style="{StaticResource Tab}" />
             </StackPanel>
-            <Button Padding="{StaticResource ButtonPadding}" Content="_Add account" Tag="&#xE710;" ContentTemplate="{StaticResource IconLabel}" Click="SignIn"
-                    HorizontalAlignment="Right" VerticalAlignment="Center" Style="{DynamicResource AccentButtonStyle}"
-                    Visibility="{Binding IsChecked, ElementName=AccountsTab, Converter={StaticResource Visible}}" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Visibility="{Binding IsChecked, ElementName=AccountsTab, Converter={StaticResource Visible}}">
+                <Button Padding="{StaticResource ButtonPadding}" Click="OfferWindows" Margin="0,0,8,0"
+                        VerticalAlignment="Stretch" ToolTip="Game windows"
+                        AutomationProperties.Name="Game windows">
+                    <TextBlock Text="&#xE737;" Style="{StaticResource Icon}" FontSize="14" />
+                </Button>
+                <Button Padding="{StaticResource ButtonPadding}" Content="_Add account" Tag="&#xE710;" ContentTemplate="{StaticResource IconLabel}" Click="SignIn"
+                        Style="{DynamicResource AccentButtonStyle}" />
+            </StackPanel>
         </DockPanel>
 
         <Grid>
@@ -420,6 +431,29 @@
                                                                         <TextBlock Text="Running"
                                                                                    Foreground="{DynamicResource SystemFillColorSuccessBrush}"
                                                                                    Visibility="{Binding Running, Converter={StaticResource Visible}}" />
+                                                                        <TextBlock Text="{Binding Stats}" FontSize="12" TextTrimming="CharacterEllipsis">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource Secondary}">
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Stats}" Value="{x:Null}">
+                                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+                                                                        <TextBlock Text="{Binding Note}" FontStyle="Italic" TextTrimming="CharacterEllipsis"
+                                                                                   ToolTip="{Binding Note}">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource Secondary}">
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Note}" Value="{x:Null}">
+                                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
                                                                     </StackPanel>
                                                                 </DockPanel>
                                                             </Border>
@@ -537,10 +571,24 @@
                             <CheckBox x:Name="TrayBox" Content="Minimise to the notification area" Click="ChangeTray" Margin="0,4,0,0" />
                             <CheckBox x:Name="WarnBox" Content="Warn before a membership runs out" Click="ChangeWarn" Margin="0,4,0,0"
                                       AutomationProperties.HelpText="Shows a notice when a membership that does not renew is about to end" />
+                            <CheckBox x:Name="LevelsBox" Content="Show levels from the Old School hiscores" Click="ChangeLevels" Margin="0,4,0,0"
+                                      AutomationProperties.HelpText="Looks up each character's name on Jagex's public hiscores every hour" />
                             <CheckBox x:Name="UpdatesBox" Content="Check for new versions" Click="ChangeUpdates" Margin="0,4,0,0"
                                       AutomationProperties.HelpText="{Binding Text, ElementName=UpdatesNote}" />
                             <TextBlock x:Name="UpdatesNote" Margin="0,4,0,0" Style="{StaticResource Note}"
                                        Text="Asks GitHub for the latest release when JagexManager starts. Nothing is downloaded by itself." />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="Game windows" Style="{StaticResource Heading}" />
+                            <CheckBox x:Name="PlacementBox" Content="Open each character's window where it was last time" Click="ChangePlacement"
+                                      AutomationProperties.HelpText="Remembers the position and size of each character's game window" />
+                            <CheckBox x:Name="HotkeysBox" Content="Use hotkeys to show game windows" Click="ChangeHotkeys" Margin="0,4,0,0"
+                                      AutomationProperties.HelpText="{Binding Text, ElementName=HotkeysNote}" />
+                            <TextBlock x:Name="HotkeysNote" Margin="0,4,0,0" Style="{StaticResource Note}"
+                                       Text="Ctrl+Alt+1 to 9 show the running characters in list order, and Ctrl+Alt+0 shows the next one. On keyboards with AltGr, these keys stop AltGr typing characters such as { and [." />
                         </StackPanel>
                     </Border>
 
@@ -569,6 +617,20 @@
                                 <TextBlock Text="{x:Static app:App.DataFolder}" ToolTip="{x:Static app:App.DataFolder}"
                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                             </DockPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="Backup" Style="{StaticResource Heading}" />
+                            <TextBlock x:Name="BackupNote" Style="{StaticResource Note}"
+                                       Text="Saves your clients, settings, and each character's names, notes, groups and choices to a file. Sign-ins are not in it: on another PC, add your accounts first, then import." />
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Padding="{StaticResource ButtonPadding}" Content="_Export…" Click="Export"
+                                        AutomationProperties.HelpText="{Binding Text, ElementName=BackupNote}" />
+                                <Button Padding="{StaticResource ButtonPadding}" Content="_Import…" Click="Import" Margin="8,0,0,0"
+                                        AutomationProperties.HelpText="{Binding Text, ElementName=BackupNote}" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
                 </StackPanel>

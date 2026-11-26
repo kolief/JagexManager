@@ -18,11 +18,9 @@ public partial class App : Application
         Source = new Uri("/JagexManager;component/RuneLite.xaml", UriKind.Relative),
     };
 
-    private const string OpenSignal = @"Local\JagexManager.Open";
     private const int AnyProcess = -1;
 
     private static Mutex? instance;
-    private static EventWaitHandle? opening;
 
     private static Theme theme;
 
@@ -47,12 +45,13 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        var minimised = e.Args.Contains(Autostart.Minimised);
+        var autostarted = e.Args.Contains(Autostart.Minimised);
+        var command = Command.Parse(e.Args);
         instance = new Mutex(initiallyOwned: true, @"Local\JagexManager", out var first);
         if (!first)
         {
-            if (!minimised)
-                WakeRunning();
+            if (command is not null || !autostarted)
+                WakeRunning(command ?? Command.Open);
 
             Shutdown();
             return;
@@ -63,51 +62,21 @@ public partial class App : Application
         SystemParameters.StaticPropertyChanged += FollowContrast;
 
         var window = new MainWindow();
-        Listen(window);
-        window.Start(minimised);
+        var relay = new Relay(Relay.Pipe, heard => Dispatcher.BeginInvoke(() => window.Act(heard)));
+        window.Closed += (_, _) => relay.Dispose();
+        window.Start(autostarted || command is not null);
+        if (command is not null)
+            window.Act(command);
 
         if (!Autostart.Current.Repair())
             window.Say("JagexManager could not update its Windows startup entry. Turn Start with Windows off and on again in Settings.");
     }
 
-    private static void WakeRunning()
+    private static void WakeRunning(Command command)
     {
-        if (!Signalled())
+        _ = AllowSetForegroundWindow(AnyProcess);
+        if (!Relay.Send(Relay.Pipe, command))
             MessageBox.Show("JagexManager is already running.", "JagexManager", MessageBoxButton.OK, MessageBoxImage.Information);
-    }
-
-    private static bool Signalled()
-    {
-        try
-        {
-            if (!EventWaitHandle.TryOpenExisting(OpenSignal, out var signal))
-                return false;
-
-            using (signal)
-            {
-                AllowSetForegroundWindow(AnyProcess);
-                return signal.Set();
-            }
-        }
-        catch (Exception error) when (error is UnauthorizedAccessException or IOException)
-        {
-            return false;
-        }
-    }
-
-    private void Listen(MainWindow window)
-    {
-        try
-        {
-            opening = new EventWaitHandle(false, EventResetMode.AutoReset, OpenSignal);
-        }
-        catch (Exception error) when (error is WaitHandleCannotBeOpenedException or UnauthorizedAccessException or IOException)
-        {
-            return;
-        }
-
-        var waiting = ThreadPool.RegisterWaitForSingleObject(opening, (_, _) => Dispatcher.BeginInvoke(window.Restore), null, Timeout.Infinite, executeOnlyOnce: false);
-        window.Closed += (_, _) => waiting.Unregister(null);
     }
 
     private static void FollowContrast(object? sender, PropertyChangedEventArgs e)

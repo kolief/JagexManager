@@ -12,6 +12,8 @@ public sealed class Group(string name, IReadOnlyList<CharacterView> characters)
 
     public IReadOnlyList<CharacterView> Playable => Characters.Where(c => !c.Running && c.Ready).ToList();
 
+    public IReadOnlyList<CharacterView> Running => Characters.Where(c => c.Running).ToList();
+
     public bool Same(Group other) =>
         Name == other.Name && Detail == other.Detail && Characters.SequenceEqual(other.Characters);
 }

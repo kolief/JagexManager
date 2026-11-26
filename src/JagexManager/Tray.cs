@@ -11,6 +11,8 @@ public sealed class Tray : IDisposable
     private const int Callback = 0x8001;
     private const int LeftUp = 0x0202;
     private const int RightUp = 0x0205;
+    private const int BalloonHidden = 0x0403;
+    private const int BalloonTimeout = 0x0404;
     private const int BalloonClick = 0x0405;
     private const int Add = 0;
     private const int Modify = 1;
@@ -31,6 +33,7 @@ public sealed class Tray : IDisposable
     private readonly nint icon;
     private bool wanted;
     private bool shown;
+    private Action? clicked;
 
     public Tray(Window owner, Action open, Action exit, Func<IEnumerable<Control>> offer)
     {
@@ -54,7 +57,7 @@ public sealed class Tray : IDisposable
         return shown;
     }
 
-    public bool Tell(string title, string text)
+    public bool Tell(string title, string text, Action? click = null)
     {
         if (!shown)
             return false;
@@ -64,7 +67,11 @@ public sealed class Tray : IDisposable
         data.InfoTitle = title;
         data.Info = text;
         data.InfoFlags = InfoIcon;
-        return Shell_NotifyIcon(Modify, ref data);
+        if (!Shell_NotifyIcon(Modify, ref data))
+            return false;
+
+        clicked = click;
+        return true;
     }
 
     public void Hide()
@@ -105,7 +112,17 @@ public sealed class Tray : IDisposable
             shown = false;
             _ = Show();
         }
-        else if (message == Callback && (int)lParam is LeftUp or BalloonClick)
+        else if (message == Callback && (int)lParam == BalloonClick)
+        {
+            var click = clicked ?? open;
+            clicked = null;
+            click();
+        }
+        else if (message == Callback && (int)lParam is BalloonHidden or BalloonTimeout)
+        {
+            clicked = null;
+        }
+        else if (message == Callback && (int)lParam == LeftUp)
         {
             open();
         }

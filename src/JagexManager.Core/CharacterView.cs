@@ -9,6 +9,8 @@ public sealed class CharacterView : View
     private Character character;
     private Client? client;
     private bool ready = true;
+    private bool placed;
+    private Levels? levels;
 
     public CharacterView(AccountView owner, Character character)
     {
@@ -30,7 +32,7 @@ public sealed class CharacterView : View
         {
             character = value;
             Raise(nameof(Character), nameof(Name), nameof(Nickname), nameof(RealName), nameof(Choice), nameof(Options),
-                nameof(Detail), nameof(Hidden), nameof(Visible), nameof(Groups));
+                nameof(Detail), nameof(Hidden), nameof(Visible), nameof(Groups), nameof(Note), nameof(Stats));
             Tick();
         }
     }
@@ -50,6 +52,26 @@ public sealed class CharacterView : View
     public IReadOnlyList<string> Groups => Preference.Groups;
 
     public DateTimeOffset? Played => Preference.Played;
+
+    public string? Note => Preference.Note;
+
+    public TimeSpan Week => PlayDay.Week(Preference.Playtime, DateOnly.FromDateTime(DateTime.Today));
+
+    public Levels? Levels
+    {
+        get => levels;
+        set => Set(ref levels, value, nameof(Levels), nameof(Stats));
+    }
+
+    public string? Stats
+    {
+        get
+        {
+            string?[] parts = [levels?.Text, PlayDay.Text(Week) is { } week ? $"{week} in 7 days" : null];
+            var shown = parts.OfType<string>().ToList();
+            return shown.Count > 0 ? string.Join(" · ", shown) : null;
+        }
+    }
 
     public bool Listed => !Hidden || Owner.ShowHidden || Running;
 
@@ -91,6 +113,18 @@ public sealed class CharacterView : View
 
     public bool Running => client is not null;
 
+    public bool Closed => client is { Running: false };
+
+    public bool Crashed => client is { Running: false, Crashed: true };
+
+    public bool Windowed => client?.Windowed ?? false;
+
+    public bool Active => client?.Active ?? false;
+
+    public DateTimeOffset Since { get; private set; }
+
+    public Placement? Seen { get; private set; }
+
     public bool Ready
     {
         get => ready;
@@ -100,21 +134,44 @@ public sealed class CharacterView : View
     public bool InGroup(string group) => Preference.InGroup(group);
 
     public void Tick() =>
-        Raise(nameof(Member), nameof(Membership), nameof(DaysLeft), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing), nameof(Detail));
+        Raise(nameof(Member), nameof(Membership), nameof(DaysLeft), nameof(MembershipLeft), nameof(MembershipNote), nameof(Lapsing), nameof(Detail),
+            nameof(Week), nameof(Stats));
 
-    public void Attach(Client started) => Set(ref client, started, nameof(Running), nameof(Visible));
+    public void Attach(Client started)
+    {
+        Since = DateTimeOffset.UtcNow;
+        Seen = null;
+        placed = false;
+        Set(ref client, started, nameof(Running), nameof(Visible));
+    }
 
     public void Stop() => client?.Stop();
 
     public bool Focus() => client?.Focus() ?? false;
 
-    public bool DropClosed()
-    {
-        if (client is not { Running: false })
-            return false;
+    public bool Restore() => client?.Restore() ?? false;
 
-        Forget();
-        return true;
+    public bool Move(Area area) => client?.Move(area) ?? false;
+
+    public void Clock(DateTimeOffset now) => Since = now;
+
+    public void Watch(bool place)
+    {
+        if (client is null)
+            return;
+
+        client.Watch();
+        if (client.Locate() is not { } current)
+            return;
+
+        if (!placed && place && Preference.Placement is { } saved && saved != current && client.Place(saved))
+        {
+            placed = true;
+            return;
+        }
+
+        placed = true;
+        Seen = current;
     }
 
     public void Forget()
@@ -125,7 +182,8 @@ public sealed class CharacterView : View
 
     private bool Matches(string text) =>
         Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
-        || RealName.Contains(text, StringComparison.CurrentCultureIgnoreCase);
+        || RealName.Contains(text, StringComparison.CurrentCultureIgnoreCase)
+        || (Note?.Contains(text, StringComparison.CurrentCultureIgnoreCase) ?? false);
 
     private Preference Preference => Owner.Account.Preferences.GetValueOrDefault(character.Id, Preference.None);
 

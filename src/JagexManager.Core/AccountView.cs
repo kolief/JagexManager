@@ -22,12 +22,15 @@ public sealed class AccountView : View
 
     public string Name => account.Name;
 
-    public string Summary => Characters.Count switch
+    public string Tally => Characters.Count switch
     {
         0 => "No characters yet",
         1 => "1 character",
         var count => $"{count} characters",
     };
+
+    public string Summary =>
+        PlayDay.Text(TimeSpan.FromTicks(Characters.Sum(c => c.Week.Ticks))) is { } week ? $"{Tally} · {week} in 7 days" : Tally;
 
     public IReadOnlyList<CharacterView> Playable => Characters.Where(c => !c.Hidden && c.Visible && !c.Running && c.Ready).ToList();
 
@@ -84,6 +87,8 @@ public sealed class AccountView : View
     {
         foreach (var character in Characters)
             character.Tick();
+
+        Raise(nameof(Summary));
     }
 
     public void Arrange() => Place(account, sort == Sort.Played ? ByPlayed(account) : account.Characters);
@@ -116,7 +121,7 @@ public sealed class AccountView : View
                 Characters.Move(current, position);
         }
 
-        Raise(nameof(Account), nameof(Name), nameof(Summary), nameof(HiddenCount), nameof(HiddenLink), nameof(HiddenOffered), nameof(Matched));
+        Raise(nameof(Account), nameof(Name), nameof(Tally), nameof(Summary), nameof(HiddenCount), nameof(HiddenLink), nameof(HiddenOffered), nameof(Matched));
         if (HiddenCount == 0)
             ShowHidden = false;
     }

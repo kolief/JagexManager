@@ -21,6 +21,8 @@ public partial class MainWindow : Window
 {
     public const int SearchLimit = 50;
 
+    private const string BackupFilter = "JagexManager backup (*.json)|*.json";
+
     private static readonly string SettingsPath = Path.Combine(App.DataFolder, "settings.json");
     private static readonly string FontPath = Path.Combine(App.DataFolder, "fonts", "runescape.ttf");
     private static readonly TimeSpan Fresh = TimeSpan.FromMinutes(5);
@@ -33,13 +35,17 @@ public partial class MainWindow : Window
     private readonly Roster roster;
     private readonly DispatcherTimer watch = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer freshen = new() { Interval = TimeSpan.FromHours(1) };
+    private readonly DispatcherTimer record = new() { Interval = TimeSpan.FromMinutes(10) };
     private readonly bool fontOffered = GameFont.Available(GameFont.Repository);
+    private readonly Hiscores hiscores = Hiscores.Connect();
     private readonly Tray tray;
+    private readonly Hotkeys hotkeys;
     private Settings settings;
     private bool gameFont;
     private bool launcherBusy;
     private DateTimeOffset refreshed;
     private Release? update;
+    private Action? suggested;
 
     private AccountView? dragged;
     private bool moved;
@@ -48,6 +54,7 @@ public partial class MainWindow : Window
     {
         roster = new Roster(vault, jagex);
         tray = new Tray(this, Restore, Close, TrayItems);
+        hotkeys = new Hotkeys(ShowNumbered);
         InitializeComponent();
 
         Title = $"JagexManager {typeof(App).Assembly.GetName().Version?.ToString(3)}";
@@ -59,14 +66,22 @@ public partial class MainWindow : Window
         settings = Settings.Load(SettingsPath);
         App.Show(settings.Theme);
         roster.Sort = settings.Sort;
+        roster.KeepPlacement = settings.KeepPlacement;
         ShowFont(settings.UseGameFont);
         ShowSettings();
 
-        watch.Tick += (_, _) => roster.DropClosed();
+        watch.Tick += (_, _) =>
+        {
+            foreach (var character in roster.Watch())
+                OfferRestart(character);
+        };
         watch.Start();
+        record.Tick += (_, _) => roster.Record();
+        record.Start();
         freshen.Tick += async (_, _) =>
         {
             await RefreshAllAsync();
+            await FindLevelsAsync();
             Rest();
         };
 
@@ -132,6 +147,7 @@ public partial class MainWindow : Window
         }
 
         LoginWindow.ClearProfiles();
+        Opened();
 
         freshen.Start();
         await RefreshAllAsync();
@@ -144,7 +160,14 @@ public partial class MainWindow : Window
         if (settings.CheckUpdates)
             await CheckUpdateAsync();
 
+        await FindLevelsAsync();
         Rest();
+    }
+
+    private async Task FindLevelsAsync()
+    {
+        if (settings.ShowLevels)
+            await roster.FindLevelsAsync(hiscores);
     }
 
     private void Rest()
@@ -193,6 +216,7 @@ public partial class MainWindow : Window
 
     private void ShowList()
     {
+        ShowJumps();
         SearchArea.Visibility = roster.Searchable ? Visibility.Visible : Visibility.Collapsed;
         GroupsCard.Visibility = roster.GroupsOffered ? Visibility.Visible : Visibility.Collapsed;
 
@@ -241,10 +265,8 @@ public partial class MainWindow : Window
     {
         var account = (AccountView)((FrameworkElement)sender).DataContext;
 
-        var answer = MessageBox.Show(this,
-            $"Remove {account.Name} from JagexManager?\n\nRunning clients stay open. To end the session everywhere, use \"End sessions\" in your Jagex account settings.",
-            "Remove account", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
-        if (answer != MessageBoxResult.OK)
+        if (!Confirm($"Remove {account.Name} from JagexManager?\n\nRunning clients stay open. To end the session everywhere, use \"End sessions\" in your Jagex account settings.",
+            "Remove account"))
             return;
 
         Try(() =>
@@ -267,7 +289,7 @@ public partial class MainWindow : Window
         if (reached == false)
             Say("Jagex could not be reached. Try again in a moment.");
         else if (reached == true && !account.Expired)
-            Say($"{account.Name}: {account.Summary.ToLowerInvariant()}.");
+            Say($"{account.Name}: {account.Tally.ToLowerInvariant()}.");
     }
 
     private async void OpenLauncher(object sender, RoutedEventArgs e) =>
@@ -337,6 +359,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!Confirm("Sign the Jagex Launcher out? It closes first if it is open. Your accounts stay in JagexManager.", "Jagex Launcher"))
+            return;
+
         var open = Launcher.Running;
         try
         {
@@ -358,9 +383,15 @@ public partial class MainWindow : Window
     }
 
     private bool ConfirmReplace() =>
-        MessageBox.Show(this,
-            "The Jagex Launcher is signed in to an account that is not in JagexManager. Sign it out and continue?",
-            "Jagex Launcher", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK;
+        Confirm("The Jagex Launcher is signed in to an account that is not in JagexManager. Sign it out and continue?", "Jagex Launcher");
+
+    private bool Confirm(string question, string title)
+    {
+        var answer = IsVisible
+            ? MessageBox.Show(this, question, title, MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel)
+            : MessageBox.Show(question, title, MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
+        return answer == MessageBoxResult.OK;
+    }
 
     private void Grab(object sender, MouseButtonEventArgs e)
     {
@@ -629,6 +660,15 @@ public partial class MainWindow : Window
     private void ChangeWarn(object sender, RoutedEventArgs e) =>
         Change(settings with { WarnMembership = WarnBox.IsChecked == true });
 
+    private void ChangeLevels(object sender, RoutedEventArgs e) =>
+        Change(settings with { ShowLevels = LevelsBox.IsChecked == true });
+
+    private void ChangePlacement(object sender, RoutedEventArgs e) =>
+        Change(settings with { KeepPlacement = PlacementBox.IsChecked == true });
+
+    private void ChangeHotkeys(object sender, RoutedEventArgs e) =>
+        Change(settings with { UseHotkeys = HotkeysBox.IsChecked == true });
+
     private void ChangeSort(object sender, SelectionChangedEventArgs e)
     {
         if (SortChoice.SelectedValue is Sort sort)
@@ -654,8 +694,68 @@ public partial class MainWindow : Window
         using var explorer = Process.Start(new ProcessStartInfo(App.DataFolder + Path.DirectorySeparatorChar) { UseShellExecute = true });
     });
 
+    private void Export(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export settings",
+            Filter = BackupFilter,
+            FileName = "JagexManager backup.json",
+        };
+
+        if (dialog.ShowDialog(this) == true
+            && Try(() => File.WriteAllText(dialog.FileName, Backup.Write(settings, roster.Accounts.Select(a => a.Account)))))
+            Say($"Exported your settings to {Path.GetFileName(dialog.FileName)}. Sign-ins are not in it.");
+    }
+
+    private void Import(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Import settings",
+            Filter = BackupFilter,
+            CheckFileExists = true,
+        };
+
+        Restored? restored = null;
+        if (dialog.ShowDialog(this) != true || !Try(() => restored = Backup.Load(dialog.FileName)) || restored is null)
+            return;
+
+        var added = restored.Settings.Custom.Where(p => !settings.Custom.Contains(p)).Select(p => $"\n{p.Path}").ToList();
+        var question = "Replace your settings, and the choices for each character in the file, with the ones from it?"
+            + "\n\nOnly import a file you made yourself: it can change which programs Play starts and the options they start with.";
+        if (added.Count > 0)
+            question += $"\n\nIt adds these clients:{string.Concat(added)}";
+
+        if (!Confirm(question, "Import settings"))
+            return;
+
+        Change(restored.Settings);
+        var applied = 0;
+        if (!Try(() =>
+        {
+            applied = roster.Import(restored.Characters);
+            roster.Prune(settings.Names);
+        }))
+            return;
+
+        var missing = restored.Characters.Count - applied;
+        Say(missing switch
+        {
+            0 => "Imported your settings.",
+            1 => "Imported your settings. 1 character in the file is not here yet, so sign in to its account and import again.",
+            _ => $"Imported your settings. {missing} characters in the file are not here yet, so sign in to their accounts and import again.",
+        });
+    }
+
     private void Change(Settings changed)
     {
+        if (changed.UseGameFont != gameFont)
+        {
+            ShowFont(changed.UseGameFont);
+            changed = changed with { UseGameFont = gameFont };
+        }
+
         if (changed == settings)
             return;
 
@@ -667,6 +767,15 @@ public partial class MainWindow : Window
             App.Show(settings.Theme);
 
         roster.Sort = settings.Sort;
+        roster.KeepPlacement = settings.KeepPlacement;
+
+        if (settings.UseHotkeys != previous.UseHotkeys)
+            ApplyHotkeys();
+
+        if (settings.ShowLevels && !previous.ShowLevels)
+            _ = FindLevelsAsync();
+        else if (!settings.ShowLevels && previous.ShowLevels)
+            roster.ForgetLevels();
 
         Try(() => settings.Save(SettingsPath));
     }
@@ -697,6 +806,9 @@ public partial class MainWindow : Window
         UpdatesBox.IsChecked = settings.CheckUpdates;
         TrayBox.IsChecked = settings.UseTray;
         WarnBox.IsChecked = settings.WarnMembership;
+        LevelsBox.IsChecked = settings.ShowLevels;
+        PlacementBox.IsChecked = settings.KeepPlacement;
+        HotkeysBox.IsChecked = settings.UseHotkeys;
         AutostartBox.IsChecked = Autostart.Current.Enabled;
     }
 
@@ -757,12 +869,27 @@ public partial class MainWindow : Window
         _ => null,
     };
 
-    public void Say(string message)
+    public void Say(string message) => Report(message, null, null);
+
+    private void Suggest(string message, string label, Action act) => Report(message, label, act);
+
+    private void Report(string message, string? label, Action? act)
     {
         Status.Text = message;
+        suggested = act;
+        StatusAction.Content = label;
+        StatusAction.Visibility = act is null ? Visibility.Collapsed : Visibility.Visible;
         StatusBar.Visibility = Visibility.Visible;
 
         UIElementAutomationPeer.CreatePeerForElement(Status)?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+    }
+
+    private void TakeSuggestion(object sender, RoutedEventArgs e)
+    {
+        var act = suggested;
+        suggested = null;
+        StatusAction.Visibility = Visibility.Collapsed;
+        act?.Invoke();
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -775,7 +902,10 @@ public partial class MainWindow : Window
     {
         watch.Stop();
         freshen.Stop();
+        record.Stop();
         tray.Dispose();
+        hotkeys.Dispose();
+        roster.Record();
         roster.Forget();
         base.OnClosed(e);
     }

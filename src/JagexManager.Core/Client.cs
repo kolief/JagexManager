@@ -8,6 +8,7 @@ namespace JagexManager;
 public sealed class Client : IDisposable
 {
     private readonly SafeFileHandle job;
+    private readonly Dictionary<uint, SafeProcessHandle> processes = [];
 
     private Client(SafeFileHandle job) => this.job = job;
 
@@ -52,7 +53,9 @@ public sealed class Client : IDisposable
                 throw error;
             }
 
-            return new Client(job);
+            var client = new Client(job);
+            client.Watch();
+            return client;
         }
         catch
         {
@@ -66,37 +69,140 @@ public sealed class Client : IDisposable
         && QueryInformationJobObject(job, BasicAccounting, out var info, Marshal.SizeOf<Accounting>(), 0)
         && info.ActiveProcesses > 0;
 
+    public bool Crashed
+    {
+        get
+        {
+            (long Exited, uint Code)? last = null;
+            foreach (var process in processes.Values)
+            {
+                if (Ending(process) is { } ending && (last is null || ending.Exited > last.Value.Exited))
+                    last = ending;
+            }
+
+            return last is { Code: not 0 };
+        }
+    }
+
+    public bool Windowed => Game() is not null;
+
+    public bool Active =>
+        GetWindowThreadProcessId(GetForegroundWindow(), out var process) != 0 && Processes().Contains(process);
+
     public void Stop()
     {
         if (!job.IsClosed && !TerminateJobObject(job, 0))
             throw new Win32Exception();
     }
 
+    public void Watch()
+    {
+        foreach (var id in Processes())
+        {
+            if (processes.ContainsKey(id))
+                continue;
+
+            var process = OpenProcess(QueryLimited, false, id);
+            if (process.IsInvalid)
+                process.Dispose();
+            else
+                processes[id] = process;
+        }
+    }
+
     public bool Focus()
     {
-        var window = Windows().OrderByDescending(Area).FirstOrDefault();
+        var window = Windows().OrderByDescending(Size).FirstOrDefault();
         if (window == 0)
             return false;
 
         if (IsIconic(window))
-            _ = ShowWindowAsync(window, Restore);
+            _ = ShowWindowAsync(window, RestoreCommand);
 
         return SetForegroundWindow(window);
     }
 
-    public void Dispose() => job.Dispose();
+    public Placement? Locate() =>
+        Game() is { } game
+            ? new Placement(game.Placement.Normal.Area, game.Placement.ShowCommand == ShowMaximized
+                || (game.Placement.ShowCommand == ShowMinimized && (game.Placement.Flags & RestoreToMaximized) != 0))
+            : null;
+
+    public bool Place(Placement placement)
+    {
+        if (Game() is not { } game)
+            return false;
+
+        var target = game.Placement;
+        target.Flags = 0;
+        target.ShowCommand = placement.Maximised ? ShowMaximized : ShowNoActivate;
+        target.Normal = Bounds.Of(placement.Normal);
+        return SetWindowPlacement(game.Window, ref target);
+    }
+
+    public bool Restore() =>
+        Game() is { } game
+        && (IsIconic(game.Window) || IsZoomed(game.Window))
+        && ShowWindowAsync(game.Window, RestoreCommand);
+
+    public bool Move(Area area)
+    {
+        if (Game() is not { } game || !GetWindowRect(game.Window, out var outer))
+            return false;
+
+        var frame = DwmGetWindowAttribute(game.Window, ExtendedFrameBounds, out var visible, Marshal.SizeOf<Bounds>()) == 0 ? visible : outer;
+        var left = frame.Left - outer.Left;
+        var top = frame.Top - outer.Top;
+        var right = outer.Right - frame.Right;
+        var bottom = outer.Bottom - frame.Bottom;
+        return SetWindowPos(game.Window, 0, area.Left - left, area.Top - top, area.Width + left + right, area.Height + top + bottom,
+            NoZOrder | NoActivate | AsyncPosition);
+    }
+
+    public void Dispose()
+    {
+        job.Dispose();
+        foreach (var process in processes.Values)
+            process.Dispose();
+    }
+
+    private (nint Window, WindowPlacement Placement)? Game()
+    {
+        (nint Window, WindowPlacement Placement)? largest = null;
+        long largestSize = 0;
+        foreach (var window in Windows())
+        {
+            var placement = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
+            if (!GetWindowPlacement(window, ref placement))
+                continue;
+
+            var normal = placement.Normal.Area;
+            var dpi = GetDpiForWindow(window) is var found and > 0 ? (int)found : StandardDpi;
+            if (normal.Width * StandardDpi < SmallestGameWidth * dpi || normal.Height * StandardDpi < SmallestGameHeight * dpi)
+                continue;
+
+            var size = (long)normal.Width * normal.Height;
+            if (size > largestSize)
+            {
+                largest = (window, placement);
+                largestSize = size;
+            }
+        }
+
+        return largest;
+    }
 
     private List<nint> Windows()
     {
-        var processes = Processes();
+        var ids = Processes();
         var found = new List<nint>();
-        if (processes.Count == 0)
+        if (ids.Count == 0)
             return found;
 
         _ = EnumWindows((window, _) =>
         {
             if (GetWindowThreadProcessId(window, out var process) != 0
-                && processes.Contains(process)
+                && ids.Contains(process)
                 && IsWindowVisible(window)
                 && GetWindow(window, Owner) == 0
                 && GetWindowTextLength(window) > 0)
@@ -128,7 +234,12 @@ public sealed class Client : IDisposable
         }
     }
 
-    private static long Area(nint window) =>
+    private static (long Exited, uint Code)? Ending(SafeProcessHandle process) =>
+        GetExitCodeProcess(process, out var code) && code != StillActive && GetProcessTimes(process, out _, out var exited, out _, out _)
+            ? (exited, code)
+            : null;
+
+    private static long Size(nint window) =>
         GetWindowRect(window, out var bounds) ? (long)(bounds.Right - bounds.Left) * (bounds.Bottom - bounds.Top) : 0;
 
     private const int BasicAccounting = 1;
@@ -136,17 +247,39 @@ public sealed class Client : IDisposable
     private const int ListHeader = 8;
     private const int ListCapacity = 64;
     private const int Owner = 4;
-    private const int Restore = 9;
+    private const int QueryLimited = 0x1000;
+    private const uint StillActive = 259;
+    private const int ShowMinimized = 2;
+    private const int ShowMaximized = 3;
+    private const int ShowNoActivate = 4;
+    private const int RestoreCommand = 9;
+    private const int RestoreToMaximized = 2;
+    private const int ExtendedFrameBounds = 9;
+    private const uint NoZOrder = 0x0004;
+    private const uint NoActivate = 0x0010;
+    private const uint AsyncPosition = 0x4000;
+    private const int StandardDpi = 96;
+    private const int SmallestGameWidth = 640;
+    private const int SmallestGameHeight = 400;
 
     private delegate bool WindowVisitor(nint window, nint state);
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct Bounds
+    private struct Spot
     {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowPlacement
+    {
+        public int Length;
+        public int Flags;
+        public int ShowCommand;
+        public Spot Minimised;
+        public Spot Maximised;
+        public Bounds Normal;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -181,6 +314,17 @@ public sealed class Client : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool QueryInformationJobObject(SafeFileHandle job, int infoClass, nint info, int length, nint returned);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern SafeProcessHandle OpenProcess(int access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetExitCodeProcess(SafeProcessHandle process, out uint code);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProcessTimes(SafeProcessHandle process, out long created, out long exited, out long kernel, out long user);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumWindows(WindowVisitor visit, nint state);
@@ -194,7 +338,14 @@ public sealed class Client : IDisposable
     private static extern bool IsIconic(nint window);
 
     [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsZoomed(nint window);
+
+    [DllImport("user32.dll")]
     private static extern nint GetWindow(nint window, int relation);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowTextLength(nint window);
@@ -203,8 +354,23 @@ public sealed class Client : IDisposable
     private static extern uint GetWindowThreadProcessId(nint window, out uint process);
 
     [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint window);
+
+    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(nint window, out Bounds bounds);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowPlacement(nint window, ref WindowPlacement placement);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPlacement(nint window, ref WindowPlacement placement);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(nint window, nint after, int left, int top, int width, int height, uint flags);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -213,4 +379,7 @@ public sealed class Client : IDisposable
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(nint window);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(nint window, int attribute, out Bounds value, int size);
 }

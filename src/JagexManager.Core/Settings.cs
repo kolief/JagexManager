@@ -20,7 +20,7 @@ public enum Sort
 
 public sealed record Settings
 {
-    private static readonly JsonSerializerOptions Format = new()
+    internal static readonly JsonSerializerOptions Format = new()
     {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
@@ -47,6 +47,12 @@ public sealed record Settings
     public Sort Sort { get; init; } = Sort.Jagex;
 
     public int Gap { get; init; } = 5;
+
+    public bool KeepPlacement { get; init; } = true;
+
+    public bool UseHotkeys { get; init; }
+
+    public bool ShowLevels { get; init; } = true;
 
     [JsonIgnore]
     public IReadOnlyList<Program> Programs => Offered.Select(p => Launch(p, Options.GetValueOrDefault(p.Name))).ToList();
@@ -116,6 +122,9 @@ public sealed record Settings
         && WarnMembership == other.WarnMembership
         && Sort == other.Sort
         && Gap == other.Gap
+        && KeepPlacement == other.KeepPlacement
+        && UseHotkeys == other.UseHotkeys
+        && ShowLevels == other.ShowLevels
         && Custom.SequenceEqual(other.Custom)
         && Options.Count == other.Options.Count
         && Options.All(o => other.Options.GetValueOrDefault(o.Key) == o.Value);
@@ -124,50 +133,57 @@ public sealed record Settings
 
     public static Settings Load(string path)
     {
-        var defaults = new Settings();
         try
         {
             if (!File.Exists(path))
-                return defaults;
+                return new Settings();
 
             using var file = JsonDocument.Parse(File.ReadAllText(path));
-            var root = file.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-                return defaults;
-
-            var theme = Text(root, nameof(Theme));
-            var sort = Text(root, nameof(Sort));
-
-            var settings = new Settings
-            {
-                Default = Text(root, nameof(Default)) ?? defaults.Default,
-                Custom = CustomFrom(root),
-                Options = Texts(root, nameof(Options)),
-                Theme = Enum.GetNames<Theme>().Contains(theme) ? Enum.Parse<Theme>(theme!) : defaults.Theme,
-                UseGameFont = Flag(root, nameof(UseGameFont)) ?? defaults.UseGameFont,
-                CheckUpdates = Flag(root, nameof(CheckUpdates)) ?? defaults.CheckUpdates,
-                UseTray = Flag(root, nameof(UseTray)) ?? defaults.UseTray,
-                WarnMembership = Flag(root, nameof(WarnMembership)) ?? defaults.WarnMembership,
-                Sort = Enum.GetNames<Sort>().Contains(sort) ? Enum.Parse<Sort>(sort!) : defaults.Sort,
-                Gap = Number(root, nameof(Gap)) is { } gap && Gaps.Contains(gap) ? gap : defaults.Gap,
-            };
-
-            if (Legacy(root))
-                settings = Upgrade(settings, Text(root, "ClientPath"), Text(root, "Arguments"));
-
-            var names = settings.Names.ToHashSet();
-            return settings with
-            {
-                Default = settings.Find(settings.Default).Name,
-                Options = settings.Options
-                    .Where(o => names.Contains(o.Key) && o.Value.Trim().Length > 0)
-                    .ToDictionary(o => o.Key, o => o.Value.Trim()),
-            };
+            return Read(file.RootElement);
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return defaults;
+            return new Settings();
         }
+    }
+
+    public static Settings Read(JsonElement root)
+    {
+        var defaults = new Settings();
+        if (root.ValueKind != JsonValueKind.Object)
+            return defaults;
+
+        var theme = Text(root, nameof(Theme));
+        var sort = Text(root, nameof(Sort));
+
+        var settings = new Settings
+        {
+            Default = Text(root, nameof(Default)) ?? defaults.Default,
+            Custom = CustomFrom(root),
+            Options = Texts(root, nameof(Options)),
+            Theme = Enum.GetNames<Theme>().Contains(theme) ? Enum.Parse<Theme>(theme!) : defaults.Theme,
+            UseGameFont = Flag(root, nameof(UseGameFont)) ?? defaults.UseGameFont,
+            CheckUpdates = Flag(root, nameof(CheckUpdates)) ?? defaults.CheckUpdates,
+            UseTray = Flag(root, nameof(UseTray)) ?? defaults.UseTray,
+            WarnMembership = Flag(root, nameof(WarnMembership)) ?? defaults.WarnMembership,
+            Sort = Enum.GetNames<Sort>().Contains(sort) ? Enum.Parse<Sort>(sort!) : defaults.Sort,
+            Gap = Number(root, nameof(Gap)) is { } gap && Gaps.Contains(gap) ? gap : defaults.Gap,
+            KeepPlacement = Flag(root, nameof(KeepPlacement)) ?? defaults.KeepPlacement,
+            UseHotkeys = Flag(root, nameof(UseHotkeys)) ?? defaults.UseHotkeys,
+            ShowLevels = Flag(root, nameof(ShowLevels)) ?? defaults.ShowLevels,
+        };
+
+        if (Legacy(root))
+            settings = Upgrade(settings, Text(root, "ClientPath"), Text(root, "Arguments"));
+
+        var names = settings.Names.ToHashSet();
+        return settings with
+        {
+            Default = settings.Find(settings.Default).Name,
+            Options = settings.Options
+                .Where(o => names.Contains(o.Key) && o.Value.Trim().Length > 0)
+                .ToDictionary(o => o.Key, o => o.Value.Trim()),
+        };
     }
 
     public void Save(string path)

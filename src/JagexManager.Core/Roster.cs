@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace JagexManager;
 
@@ -41,9 +42,11 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     public const int SearchFrom = 6;
 
     private const int NamesShown = 3;
+    private const int RecentShown = 5;
 
     private readonly HashSet<(string Id, DateTimeOffset Ends)> warned = [];
     private bool refreshing;
+    private bool finding;
     private Sort sort;
     private string? search;
 
@@ -83,6 +86,13 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     public bool Searchable => search is not null || Characters.Count() >= SearchFrom;
 
     public bool GroupsOffered => Groups.Count > 0 && search is null;
+
+    public bool KeepPlacement { get; set; } = true;
+
+    public IReadOnlyList<CharacterView> Running => Characters.Where(c => c.Running).ToList();
+
+    public IReadOnlyList<CharacterView> Recent =>
+        Characters.Where(c => c.Played is not null && !c.Hidden).OrderByDescending(c => c.Played).Take(RecentShown).ToList();
 
     private IEnumerable<CharacterView> Characters => Accounts.SelectMany(a => a.Characters);
 
@@ -199,8 +209,16 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     public void SetHidden(CharacterView character, bool hidden) =>
         Prefer(character, p => p with { Hidden = hidden });
 
-    public void Join(CharacterView character, string group) =>
-        Prefer(character, p => p with { Groups = [.. p.Groups, Existing(group)] });
+    public void SetNote(CharacterView character, string? note) =>
+        Prefer(character, p => p with { Note = note });
+
+    public void Join(CharacterView character, string group) => Join([character], group);
+
+    public void Join(IEnumerable<CharacterView> characters, string group)
+    {
+        var name = Existing(group);
+        Prefer(characters, p => p with { Groups = [.. p.Groups, name] });
+    }
 
     public void Leave(CharacterView character, string group) =>
         Prefer(character, p => p with { Groups = Without(p.Groups, group) });
@@ -212,8 +230,27 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
         return renamed;
     }
 
-    public void DeleteGroup(string group) =>
-        Prefer(Members(group), p => p with { Groups = Without(p.Groups, group) });
+    public IReadOnlyList<CharacterView> DeleteGroup(string group)
+    {
+        var members = Members(group);
+        Prefer(members, p => p with { Groups = Without(p.Groups, group) });
+        return members;
+    }
+
+    public int Import(IReadOnlyDictionary<string, Preference> chosen)
+    {
+        var matched = Characters.Where(c => chosen.ContainsKey(c.Character.Id)).ToList();
+        Prefer(matched, (c, p) => p.Choose(chosen[c.Character.Id]));
+        return matched.Count;
+    }
+
+    public CharacterView? Find(string target) =>
+        Characters.FirstOrDefault(c => c.Character.Id == target)
+        ?? Characters.FirstOrDefault(c =>
+            string.Equals(c.Name, target, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(c.RealName, target, StringComparison.OrdinalIgnoreCase));
+
+    public Group? FindGroup(string name) => Groups.FirstOrDefault(g => Group.NameComparer.Equals(g.Name, name));
 
     public void Prune(IEnumerable<string> names)
     {
@@ -349,14 +386,55 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
             account.Arrange();
     }
 
-    public void DropClosed()
+    public IReadOnlyList<CharacterView> Watch()
     {
-        var closed = false;
-        foreach (var character in Characters)
-            closed |= character.DropClosed();
+        var closed = Characters.Where(c => c.Closed).ToList();
+        foreach (var character in Characters.Where(c => c.Running).Except(closed))
+            character.Watch(KeepPlacement);
 
-        if (closed)
-            Changed();
+        if (closed.Count == 0)
+            return [];
+
+        Record(closed);
+        var crashed = closed.Where(c => c.Crashed).ToList();
+        foreach (var character in closed)
+            character.Forget();
+
+        Changed();
+        return crashed;
+    }
+
+    public void Record() => Record(Running);
+
+    public async Task FindLevelsAsync(Hiscores hiscores)
+    {
+        if (finding)
+            return;
+
+        finding = true;
+        try
+        {
+            var named = Characters.Where(c => c.Character.Name.Length > 0).GroupBy(c => c.Character.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            foreach (var characters in named)
+            {
+                var levels = await hiscores.FindAsync(characters.Key);
+                foreach (var character in characters)
+                    character.Levels = levels;
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+        {
+        }
+        finally
+        {
+            finding = false;
+        }
+    }
+
+    public void ForgetLevels()
+    {
+        foreach (var character in Characters)
+            character.Levels = null;
     }
 
     public void Forget()
@@ -441,9 +519,30 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
     private void Stamp(CharacterView character)
     {
         var now = DateTimeOffset.UtcNow;
+        Quietly(() => Prefer(character, p => p with { Played = now }));
+    }
+
+    private void Record(IReadOnlyList<CharacterView> characters)
+    {
+        if (characters.Count == 0)
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        Quietly(() => Prefer(characters, (c, p) => p with
+        {
+            Playtime = PlayDay.Add(p.Playtime, c.Since, now),
+            Placement = KeepPlacement && c.Seen is { } seen ? seen : p.Placement,
+        }));
+
+        foreach (var character in characters)
+            character.Clock(now);
+    }
+
+    private static void Quietly(Action save)
+    {
         try
         {
-            Prefer(character, p => p with { Played = now });
+            save();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or CryptographicException)
         {
@@ -472,7 +571,10 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
 
     private void Prefer(CharacterView character, Func<Preference, Preference> change) => Prefer([character], change);
 
-    private void Prefer(IEnumerable<CharacterView> characters, Func<Preference, Preference> change)
+    private void Prefer(IEnumerable<CharacterView> characters, Func<Preference, Preference> change) =>
+        Prefer(characters, (_, preference) => change(preference));
+
+    private void Prefer(IEnumerable<CharacterView> characters, Func<CharacterView, Preference, Preference> change)
     {
         var changed = false;
         foreach (var members in characters.GroupBy(c => c.Owner))
@@ -486,7 +588,7 @@ public sealed class Roster(Vault vault, Jagex jagex) : View
             foreach (var character in kept)
             {
                 var id = character.Character.Id;
-                var preference = change(preferences.GetValueOrDefault(id, Preference.None)).Tidy();
+                var preference = change(character, preferences.GetValueOrDefault(id, Preference.None)).Tidy();
                 if (preference == Preference.None)
                     preferences.Remove(id);
                 else

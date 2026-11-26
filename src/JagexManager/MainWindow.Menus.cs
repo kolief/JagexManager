@@ -9,10 +9,6 @@ namespace JagexManager;
 
 public partial class MainWindow
 {
-    private const int NicknameLimit = 32;
-    private const int OptionsLimit = 1000;
-    private const int GroupLimit = 32;
-
     private void OfferClients(object sender, RoutedEventArgs e)
     {
         var button = (Button)sender;
@@ -50,6 +46,7 @@ public partial class MainWindow
         }
 
         menu.Items.Add(Display.Item("_Rename…", () => Rename(character)));
+        menu.Items.Add(Display.Item("_Note…", () => AskNote(character)));
         menu.Items.Add(Display.Item("_Launch options…", () => AskOptions(character)));
         if (ProfileMenu(character) is { } profiles)
             menu.Items.Add(profiles);
@@ -58,6 +55,7 @@ public partial class MainWindow
         menu.Items.Add(Display.Item(character.Hidden ? "_Show in list" : "_Hide", () => ToggleHidden(character)));
         menu.Items.Add(new Separator());
 
+        menu.Items.Add(Display.Item("Create desktop shortc_ut", () => CreateShortcut(character.Name, new Command(CommandKind.Play, character.Character.Id))));
         var copy = Display.Item("_Copy session details", () => CopySession(character));
         copy.IsEnabled = !character.Owner.Expired;
         menu.Items.Add(copy);
@@ -118,7 +116,7 @@ public partial class MainWindow
     private void NewGroup(CharacterView character)
     {
         var answer = Preference.Clean(Prompt.Ask(this, title: "New group", question: $"Name of the group to add {character.Name} to",
-            note: "Play a whole group from the top of the list or the notification area.", answer: "", limit: GroupLimit));
+            note: "Play a whole group from the top of the list or the notification area.", answer: "", limit: Preference.GroupLimit));
 
         if (answer is not null)
             ToggleGroup(character, answer, join: true);
@@ -160,10 +158,20 @@ public partial class MainWindow
     {
         var answer = Prompt.Ask(this, title: "Rename", question: $"Name to show for {character.RealName}",
             note: "Only shown in JagexManager. Leave it empty to show the character's own name.",
-            answer: character.Nickname ?? "", limit: NicknameLimit);
+            answer: character.Nickname ?? "", limit: Preference.NicknameLimit);
 
         if (answer is not null && Try(() => roster.Rename(character, answer)))
             Say(character.Nickname is { } nickname ? $"{character.RealName} is now shown as {nickname}." : $"{character.RealName} shows its own name again.");
+    }
+
+    private void AskNote(CharacterView character)
+    {
+        var answer = Prompt.Ask(this, title: "Note", question: $"Note for {character.Name}",
+            note: "Shown under the character and found by search. Leave it empty to remove it.",
+            answer: character.Note ?? "", limit: Preference.NoteLimit);
+
+        if (answer is not null && Try(() => roster.SetNote(character, answer)))
+            Say(character.Note is null ? $"Removed the note for {character.Name}." : $"Saved the note for {character.Name}.");
     }
 
     private void AskOptions(CharacterView character)
@@ -171,7 +179,7 @@ public partial class MainWindow
         var client = settings.Find(character.Choice).Name;
         var answer = Prompt.Ask(this, title: "Launch options", question: $"Launch options for {character.Name} in {client}",
             note: "Replaces the launch options from Settings for this character. Leave it empty to use Settings.",
-            answer: character.Options ?? "", limit: OptionsLimit);
+            answer: character.Options ?? "", limit: Preference.OptionsLimit);
 
         if (answer is not null && Try(() => roster.SetOptions(character, answer, client)))
             Say(character.Options is { } options ? $"{character.Name} starts {client} with {options}." : $"{character.Name} uses the launch options from Settings.");
@@ -211,15 +219,19 @@ public partial class MainWindow
     private void AddGroupItems(ContextMenu menu, Group group)
     {
         menu.Items.Add(Display.Item("_Play", async () => await PlayGroupAsync(group)));
+        var stop = Display.Item("S_top", () => StopAll(group.Running, group));
+        stop.IsEnabled = group.Running.Count > 0;
+        menu.Items.Add(stop);
         menu.Items.Add(new Separator());
         menu.Items.Add(Display.Item("_Rename…", () => RenameGroup(group)));
+        menu.Items.Add(Display.Item("Create desktop shortc_ut", () => CreateShortcut(group.Name, new Command(CommandKind.PlayGroup, group.Name))));
         menu.Items.Add(Display.Item("_Delete group", () => DeleteGroup(group)));
     }
 
     private void RenameGroup(Group group)
     {
         var answer = Preference.Clean(Prompt.Ask(this, title: "Rename group", question: $"New name for {group.Name}",
-            note: "Groups with the same name are joined together.", answer: group.Name, limit: GroupLimit));
+            note: "Groups with the same name are joined together.", answer: group.Name, limit: Preference.GroupLimit));
 
         string? renamed = null;
         if (answer is not null && answer != group.Name && Try(() => renamed = roster.RenameGroup(group.Name, answer)))
@@ -228,8 +240,15 @@ public partial class MainWindow
 
     private void DeleteGroup(Group group)
     {
-        if (Try(() => roster.DeleteGroup(group.Name)))
-            Say($"Deleted {group.Name}. Its characters are still on their accounts.");
+        IReadOnlyList<CharacterView> members = [];
+        if (!Try(() => members = roster.DeleteGroup(group.Name)))
+            return;
+
+        Suggest($"Deleted {group.Name}. Its characters are still on their accounts.", "Undo", () =>
+        {
+            if (Try(() => roster.Join(members, group.Name)))
+                Say($"{group.Name} is back.");
+        });
     }
 
     private List<Control> TrayItems()
@@ -261,6 +280,12 @@ public partial class MainWindow
 
         if (accounts.Count > 0)
             items.Add(new Separator());
+
+        if (roster.Running.Count > 0)
+        {
+            items.AddRange(WindowItems());
+            items.Add(new Separator());
+        }
 
         return items;
     }
